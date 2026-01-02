@@ -5,7 +5,7 @@ def test_default_config():
     config = ExperimentConfig()
     assert config.dataset.name == "pendulum"
     assert config.training.batch_size == 64
-    assert config.model.embedding_dim == 32
+    assert config.model.embedding_dim == 64
 
 
 def test_nested_config_overrides():
