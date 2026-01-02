@@ -8,7 +8,8 @@ dependencies = [
     "torch",
     "numpy",
     "matplotlib",
-    "imageio"
+    "imageio",
+    "tqdm>=4.67.1",
 ]
 
 [tool.ruff]
