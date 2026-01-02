@@ -1,4 +1,0 @@
-def bad_function():
-    x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-    print("This string has bad spacing")
-    return x
