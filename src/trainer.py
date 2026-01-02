@@ -49,7 +49,7 @@ class JEPATrainer:
         """
         optimizer = optim.Adam(list(self.encoder.parameters()) + list(self.predictor.parameters()), lr=self.lr)
         criterion = nn.MSELoss()
-        ema_decay = 0.99
+        ema_decay = self.ema_start
 
         self.logger.info(f"Starting JEPA Training for {epochs} epochs...")
         self.encoder.train()
