@@ -11,7 +11,11 @@ from src.dataset import DatasetFactory
 from src.models import Decoder, Encoder, Predictor, VisionDecoder, VisionEncoder
 from src.trainer import JEPATrainer
 from src.utils import setup_logger
-from src.visualization import visualize_forecast, visualize_latent_reconstruction
+from src.visualization import (
+    visualize_forecast,
+    visualize_image_reconstruction,
+    visualize_latent_reconstruction,
+)
 
 
 class Runner:
@@ -136,14 +140,25 @@ class Runner:
         self.logger.info("Generating Visualizations...")
 
         recon_path = os.path.join(self.run_dir, "reconstruction.png")
-        visualize_latent_reconstruction(
-            self.encoder,
-            self.decoder,
-            save_path=recon_path,
-            mode=self.cfg.dataset.name,
-            num_points=self.cfg.num_vis_points,
-            history_length=self.cfg.dataset.history_length,
-        )
+
+        if self.cfg.dataset.name == "pendulum_image":
+            visualize_image_reconstruction(
+                self.encoder,
+                self.decoder,
+                self.dataset,
+                save_path=recon_path,
+                num_samples=5,
+                history_length=self.cfg.dataset.history_length,
+            )
+        else:
+            visualize_latent_reconstruction(
+                self.encoder,
+                self.decoder,
+                save_path=recon_path,
+                mode=self.cfg.dataset.name,
+                num_points=self.cfg.num_vis_points,
+                history_length=self.cfg.dataset.history_length,
+            )
 
         if self.cfg.dataset.name == "pendulum":
             forecast_path = os.path.join(self.run_dir, "forecast.mp4")

@@ -315,3 +315,79 @@ def visualize_forecast(
         os.makedirs(dirname, exist_ok=True)
 
     imageio.mimsave(save_path, frames, fps=30)
+
+
+def visualize_image_reconstruction(
+    encoder,
+    decoder,
+    dataset,
+    save_path="reconstruction.png",
+    num_samples=5,
+    history_length=3,
+):
+    """
+    Visualizes original vs reconstructed images.
+    """
+    encoder.eval()
+    decoder.eval()
+    device = next(encoder.parameters()).device
+
+    # Get some samples
+    indices = np.random.choice(len(dataset), num_samples, replace=False)
+
+    # Dataset returns (30, C, H, W) usually
+    # We want to reconstruct the LAST frame of a context window
+    # Context: [0, 1, 2] -> Predict 3?
+    # Or just reconstruct context?
+    # JEPA Decoder: Latent -> Input.
+    # If Encoder encodes [0,1,2], Latent represents state at 2 (or 3?).
+    # Decoder should reconstruct something.
+    # In Trainer: `reconstruction = self.decoder(embedding)`. `loss(reconstruction, context)`.
+    # So `reconstruction` must match `context`.
+    # Whatever context is (flattened or reshaped).
+
+    # Let's take [0..H] frames.
+
+    fig, axes = plt.subplots(num_samples, 2, figsize=(5, 2.5 * num_samples))
+    plt.tight_layout()
+
+    for i, idx in enumerate(indices):
+        seq = dataset[idx]  # (Seq, C, H, W)
+
+        # Taking random t
+        t = 0
+        context_frames = seq[t : t + history_length]  # (H, 3, 64, 64) OR (H, 3, 32, 32)
+
+        # Reshape for model: (1, H*C, H, W)
+        H, C, Hei, Wid = context_frames.shape
+        x_in = context_frames.reshape(1, H * C, Hei, Wid).to(device)
+
+        with torch.no_grad():
+            z = encoder(x_in)
+            rec = decoder(z)  # (1, H*C, H, W)
+
+        # We visualize the LAST frame of the context
+        # Img (C, H, W). Need (H, W, C) for matplotlib.
+
+        # Original Last Frame
+        orig_img = context_frames[-1].permute(1, 2, 0).numpy()  # (H, W, 3)
+
+        # Reconstructed Last Frame
+        rec_cpu = rec.cpu().view(H, C, Hei, Wid)
+        rec_img = rec_cpu[0, -1].permute(1, 2, 0).numpy()  # (H, W, 3)
+
+        ax_orig = axes[i, 0] if num_samples > 1 else axes[0]
+        ax_rec = axes[i, 1] if num_samples > 1 else axes[1]
+
+        ax_orig.imshow(orig_img)
+        ax_orig.set_title("Original")
+        ax_orig.axis("off")
+
+        ax_rec.imshow(rec_img)
+        ax_rec.set_title("Reconstruction")
+        ax_rec.axis("off")
+
+    print(f"Saving image reconstruction plot to {save_path}")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
