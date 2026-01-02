@@ -75,10 +75,18 @@ class Runner:
 
             self.logger.info(f"Initializing Vision Models with In Channels: {input_channels}")
 
-            self.encoder = VisionEncoder(input_channels=input_channels, embedding_dim=self.cfg.model.embedding_dim)
+            self.encoder = VisionEncoder(
+                input_channels=input_channels,
+                embedding_dim=self.cfg.model.embedding_dim,
+                image_size=self.cfg.dataset.image_size,
+            )
             # Predictor is always MLP on Latents
             self.predictor = Predictor(embedding_dim=self.cfg.model.embedding_dim, hidden_dim=self.cfg.model.hidden_dim)
-            self.decoder = VisionDecoder(embedding_dim=self.cfg.model.embedding_dim, output_channels=input_channels)
+            self.decoder = VisionDecoder(
+                embedding_dim=self.cfg.model.embedding_dim,
+                output_channels=input_channels,
+                image_size=self.cfg.dataset.image_size,
+            )
         else:
             # Vector based datasets
             if self.cfg.dataset.name == "pendulum":
