@@ -101,7 +101,13 @@ class ExperimentConfig:
             "--epochs",
             type=int,
             default=default_tr.jepa_epochs,
-            help=f"Epochs for JEPA training (and Decoder) (default: {default_tr.jepa_epochs})",
+            help=f"Epochs for JEPA training (default: {default_tr.jepa_epochs})",
+        )
+        parser.add_argument(
+            "--decoder_epochs",
+            type=int,
+            default=default_tr.decoder_epochs,
+            help=f"Epochs for Decoder training (default: {default_tr.decoder_epochs})",
         )
         parser.add_argument(
             "--lr",
@@ -126,11 +132,10 @@ class ExperimentConfig:
             name=args.mode, size=args.size, history_length=args.history_length, image_size=args.image_size
         )
 
-        # Use same epochs count for both phases for simplicity, or we could add separating flags
         tr_config = TrainingConfig(
             batch_size=args.batch_size,
             jepa_epochs=args.epochs,
-            decoder_epochs=args.epochs,
+            decoder_epochs=args.decoder_epochs,
             lr=args.lr,
             num_workers=args.workers,
         )
