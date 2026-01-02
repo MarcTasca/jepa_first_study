@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm
 
 from src.models import Decoder, Encoder, Predictor
 
@@ -68,8 +67,7 @@ class JEPATrainer:
             start_time = time.time()
             epoch_loss = 0
 
-            pbar = tqdm(self.dataloader, desc=f"JEPA Epoch {epoch + 1}/{epochs}")
-            for trajectory in pbar:
+            for trajectory in self.dataloader:
                 trajectory = trajectory.to(self.device)  # (B, 30, 4)
 
                 # Dynamic Slicing
@@ -129,7 +127,6 @@ class JEPATrainer:
                         param_k.data = param_k.data * ema_decay + param_q.data * (1.0 - ema_decay)
 
                 epoch_loss += loss.item()
-                pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
             end_time = time.time()
             epoch_duration = end_time - start_time
@@ -157,8 +154,7 @@ class JEPATrainer:
             start_time = time.time()
             epoch_loss = 0
 
-            pbar = tqdm(self.dataloader, desc=f"Decoder Epoch {epoch + 1}/{epochs}")
-            for trajectory in pbar:
+            for trajectory in self.dataloader:
                 trajectory = trajectory.to(self.device)
 
                 # Decoder always learns to reconstruct the context itself?
@@ -187,7 +183,6 @@ class JEPATrainer:
                 optimizer.step()
 
                 epoch_loss += loss.item()
-                pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
             end_time = time.time()
             epoch_duration = end_time - start_time

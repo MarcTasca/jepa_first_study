@@ -9,7 +9,6 @@ dependencies = [
     "numpy",
     "matplotlib",
     "imageio",
-    "tqdm>=4.67.1",
 ]
 
 [tool.ruff]
