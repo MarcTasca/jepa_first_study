@@ -1,116 +1,167 @@
 # JEPA for Dynamics Forecasting
 
-A Joint Embedding Predictive Architecture (JEPA) implementation for forecasting complex dynamics (e.g., Chaos, Lissajous curves).
+A **Joint Embedding Predictive Architecture (JEPA)** implementation for learning and forecasting complex dynamics from both **vector** and **image** observations.
+
+![JEPA Architecture](https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/JEPA_overview_diagram.svg/500px-JEPA_overview_diagram.svg.png)
+
+## Features
+
+- **Vector Mode**: Learn dynamics from coordinate trajectories (circle, spiral, lissajous, double pendulum)
+- **Image Mode**: Learn dynamics from rendered pixel frames (`pendulum_image`)
+- **Variance Regularization**: Prevents representation collapse (VICReg-inspired)
+- **EMA Target Encoder**: Coupled with learning rate for stable training
+- **Autoregressive Forecasting**: Visualize model predictions vs ground truth physics
+- **Dataset Caching**: Pre-compute and cache rendered images for fast iteration
 
 ## Installation
 
-### Prerequisites
-- Python 3.8+
-- PyTorch
-
-### Setup
-Install dependencies:
 ```bash
-pip install torch numpy matplotlib imageio
-```
-Or using `uv`:
-```bash
+# Using uv (recommended)
 uv sync
+
+# Or pip
+pip install torch numpy matplotlib imageio pillow tqdm
 ```
 
-## Usage
+## Quick Start
 
-Run the main training and visualization loop:
+### Vector Mode (Double Pendulum)
 ```bash
-python run.py --mode pendulum
+uv run python run.py --mode pendulum --epochs 100 --size 100000
 ```
 
-### Command Line Arguments
-- `--mode`: Dataset to use (`pendulum`, `circle`, `spiral`, `lissajous`). Default: `pendulum`.
-- `--epochs`: Number of epochs for training. Default: `100`.
-- `--batch_size`: Batch size. Default: `64`.
-- `--lr`: Learning rate. Default: `1e-3`.
-- `--seed`: Random seed. Default: `42`.
-- `--vis_points`: Number of points for visualization. Default: `1000`.
-
-Example:
+### Image Mode (Pixel Pendulum)
 ```bash
-python run.py --mode lissajous --epochs 50 --batch_size 32
+uv run python run.py --mode pendulum_image --size 10000 --image_size 64 --epochs 50
+```
+
+## Command Line Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mode` | `pendulum` | Dataset: `circle`, `spiral`, `lissajous`, `pendulum`, `pendulum_image` |
+| `--size` | `100000` | Number of trajectory sequences |
+| `--image_size` | `64` | Image resolution for `pendulum_image` mode |
+| `--epochs` | `100` | Training epochs (applies to both JEPA and Decoder phases) |
+| `--batch_size` | `64` | Batch size |
+| `--lr` | `1e-3` | Learning rate |
+| `--history_length` | `2` | Number of frames in context window |
+| `--workers` | `4` | DataLoader workers |
+| `--vis_points` | `1000` | Frames in forecast visualization |
+
+## Architecture
+
+### Models (`src/models.py`)
+
+| Model | Input | Output | Description |
+|-------|-------|--------|-------------|
+| `Encoder` | Vector `(B, D)` | Latent `(B, 32)` | 3-layer MLP encoder |
+| `Predictor` | Latent `(B, 32)` | Latent `(B, 32)` | Predicts next-step embedding |
+| `Decoder` | Latent `(B, 32)` | Vector `(B, D)` | Reconstructs observations |
+| `VisionEncoder` | Image `(B, C, H, W)` | Latent `(B, 32)` | 3-layer CNN encoder |
+| `VisionDecoder` | Latent `(B, 32)` | Image `(B, C, H, W)` | Transposed CNN decoder |
+
+### Training Pipeline (`src/trainer.py`)
+
+**Phase 1: JEPA Training (Self-Supervised)**
+```
+Context[t:t+H] → Encoder → z_t → Predictor^gap → z_pred
+Target[t+gap:t+gap+H] → Target Encoder (EMA) → z_target
+Loss = MSE(z_pred, z_target) + λ·Variance_Regularization
+```
+
+**Phase 2: Decoder Training (Verification)**
+```
+Context → Encoder (frozen) → z → Decoder → Reconstruction
+Loss = MSE(Reconstruction, Context)
+```
+
+### Datasets (`src/dataset.py`)
+
+| Dataset | Type | Description |
+|---------|------|-------------|
+| `TrajectoryDataset` | Vector | Circular motion |
+| `SpiralTrajectoryDataset` | Vector | Expanding spiral |
+| `LissajousTrajectoryDataset` | Vector | Lissajous curves |
+| `DoublePendulumDataset` | Vector | Chaotic double pendulum (RK4 physics) |
+| `PixelPendulumDataset` | Image | Rendered double pendulum frames |
+
+## Outputs
+
+Each run creates a timestamped folder in `results/` containing:
+
+```
+results/pendulum_image_20260102_173937/
+├── models/
+│   ├── encoder.pth
+│   ├── predictor.pth
+│   └── decoder.pth
+├── reconstruction.png    # Original vs Decoded comparison
+├── forecast.mp4          # Ground Truth vs JEPA prediction video
+└── run.log               # Training logs
+```
+
+## Key Implementation Details
+
+### Variance Regularization (Anti-Collapse)
+Without regularization, the encoder can collapse to outputting constant embeddings. We add a VICReg-inspired variance loss:
+```python
+var_loss = mean(relu(1.0 - var(z_pred))) + mean(relu(1.0 - var(z_target)))
+loss = mse_loss + 1.0 * var_loss
+```
+
+### Dynamic EMA-LR Coupling
+The target encoder's EMA decay increases as learning rate decreases:
+```python
+ema_decay = 1.0 - (1.0 - base_ema) * (current_lr / initial_lr)
+```
+
+### Image Precomputation
+For `pendulum_image` mode, images are pre-rendered and cached to disk for fast reloading:
+```
+[PixelPendulumDataset] Pre-computing 10000 sequences of 64x64 images into RAM...
+[DatasetFactory] Saving dataset to cache: data/pendulum_image/<hash>/dataset.pt
+```
+
+## Development
+
+### Testing
+```bash
+uv run python -m pytest tests/
+```
+
+### Linting
+```bash
+uv run ruff check .
+uv run ruff format .
+```
+
+### Pre-commit Hooks
+```bash
+uv run pre-commit install
+uv run pre-commit run --all-files
 ```
 
 ## Project Structure
 
 ```
 jepa/
-├── .github/          # CI/CD Workflows
-├── forecasting/      # Analysis & Comparison scripts
-├── run.py            # Entry point
+├── run.py                 # Entry point
 ├── src/
-│   ├── config.py     # Configuration dataclasses
-│   ├── dataset.py    # Datasets and Factory
-│   ├── models.py     # Neural Network Modules
-│   ├── runner.py     # Experiment Runner
-│   ├── trainer.py    # Training Logic
-│   ├── utils.py      # Utilities (Logging)
-│   └── visualization.py # Plotting & Animation
-├── tests/            # Unit Tests
-
+│   ├── config.py          # CLI args & dataclasses
+│   ├── dataset.py         # Datasets & DatasetFactory
+│   ├── models.py          # Encoder, Predictor, Decoder (MLP & CNN)
+│   ├── runner.py          # Experiment orchestration
+│   ├── trainer.py         # JEPA & Decoder training loops
+│   ├── utils.py           # Logging utilities
+│   └── visualization.py   # Plots & animations
+├── tests/                 # Unit tests
+├── .github/workflows/     # CI/CD
+└── pyproject.toml         # Dependencies
 ```
 
-## Components
+## Citation
 
-### Configuration
-Configuration is handled via `src/config.py`. It uses dataclasses to define default hyperparameters for datasets, models, and training.
-
-### Datasets
-`src/dataset.py` contains:
-- `DoublePendulumDataset`: Chaotic dynamics via RK4 integration.
-- `TrajectoryDataset`: Simple circular motion.
-- `SpiralTrajectoryDataset`: Non-linear manifold.
-- `LissajousTrajectoryDataset`: Expanding Lissajous curves.
-
-### Models
-`src/models.py` defines:
-- `Encoder`: Maps obervations to latent space.
-- `Predictor`: Predicts future latent states.
-- `Decoder`: Maps latent states back to observations (verification only).
-
-### Trainer
-`src/trainer.py` implements the JEPA self-supervised training loop and a separate decoder training loop for verification.
-
-## Development
-
-We follow standard engineering practices to ensure code quality and reproducibility.
-
-### Dependency Management
-This project uses [uv](https://github.com/astral-sh/uv) for fast and reliable dependency management.
-```bash
-uv sync                 # Install dependencies from lock file
-uv add <package_name>   # Add a new dependency
-```
-
-### Testing
-Unit tests are located in `tests/` and cover models, datasets, and configuration. We use `pytest`.
-```bash
-uv run python -m pytest tests/
-```
-
-### Linting & Formatting
-We use `ruff` for linting and formatting, configured in `pyproject.toml`.
-```bash
-uv run ruff check .     # Check for lint errors
-uv run ruff format .    # Fix formatting issues
-```
-
-### Pre-commit Hooks
-We use `pre-commit` to ensure code quality before every commit.
-```bash
-# Install hooks (run once)
-uv run pre-commit install
-
-# Run manually (optional)
-uv run pre-commit run --all-files
-```
-
-### CI/CD
-A GitHub Actions workflow (`.github/workflows/ci.yml`) is configured to run tests and lint checks automatically on every `push` and `pull_request` to the `main` branch.
+Based on the JEPA architecture from:
+- [I-JEPA: Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture](https://arxiv.org/abs/2301.08243)
+- [VICReg: Variance-Invariance-Covariance Regularization](https://arxiv.org/abs/2105.04906)
