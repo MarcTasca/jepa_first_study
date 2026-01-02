@@ -46,7 +46,15 @@ class Runner:
     def prepare_data(self):
         self.logger.info(f"Loading dataset: {self.cfg.dataset.name}")
         self.dataset = DatasetFactory.get_dataset(self.cfg.dataset)
-        self.dataloader = DataLoader(self.dataset, batch_size=self.cfg.training.batch_size, shuffle=True)
+        self.dataloader = DataLoader(
+            self.dataset,
+            batch_size=self.cfg.training.batch_size,
+            shuffle=True,
+            num_workers=self.cfg.training.num_workers,
+            pin_memory=self.cfg.training.pin_memory,
+            prefetch_factor=self.cfg.training.prefetch_factor if self.cfg.training.num_workers > 0 else None,
+            persistent_workers=True if self.cfg.training.num_workers > 0 else False,
+        )
         self.logger.info(f"Dataset loaded with {len(self.dataset)} samples")
 
     def initialize_models(self):

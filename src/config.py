@@ -36,6 +36,10 @@ class TrainingConfig:
     lr: float = 1e-3
     ema_start: float = 0.99
     device: str = "auto"
+    # Dataloader optimization
+    num_workers: int = 4
+    prefetch_factor: int = 2
+    pin_memory: bool = True
 
 
 @dataclass
@@ -65,6 +69,7 @@ class ExperimentConfig:
         parser.add_argument("--epochs", type=int, default=100, help="Epochs for JEPA training (and Decoder)")
         parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
         parser.add_argument("--seed", type=int, default=42, help="Random seed")
+        parser.add_argument("--workers", type=int, default=4, help="Num workers")
 
         # Visualization
         parser.add_argument("--vis_points", type=int, default=1000, help="Number of points for visualization")
@@ -76,7 +81,11 @@ class ExperimentConfig:
 
         # Use same epochs count for both phases for simplicity, or we could add separating flags
         tr_config = TrainingConfig(
-            batch_size=args.batch_size, jepa_epochs=args.epochs, decoder_epochs=args.epochs, lr=args.lr
+            batch_size=args.batch_size,
+            jepa_epochs=args.epochs,
+            decoder_epochs=args.epochs,
+            lr=args.lr,
+            num_workers=args.workers,
         )
 
         return cls(dataset=ds_config, training=tr_config, seed=args.seed, num_vis_points=args.vis_points)
