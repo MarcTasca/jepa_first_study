@@ -13,6 +13,10 @@ class DatasetConfig:
     spiral_loops: int = 3
     lissajous_a: int = 3
     lissajous_b: int = 5
+    # Caching
+    cache_dir: str = "data"
+    use_cache: bool = True
+    regenerate: bool = False
 
 
 @dataclass
