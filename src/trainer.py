@@ -23,6 +23,7 @@ class JEPATrainer:
         decoder: Decoder,
         dataloader: torch.utils.data.DataLoader,
         lr: float = 1e-3,
+        ema_start: float = 0.99,
         device: torch.device = torch.device("cpu"),
     ):
         self.encoder = encoder.to(device)
@@ -31,6 +32,7 @@ class JEPATrainer:
         self.dataloader = dataloader
         self.device = device
         self.lr = lr
+        self.ema_start = ema_start
         self.logger = logging.getLogger("JEPATrainer")
 
         # Target Encoder is a copy of Encoder, updated via EMA, NO gradients
@@ -56,7 +58,7 @@ class JEPATrainer:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
         # Base EMA decay when LR is at initial value
-        base_ema = 0.99
+        base_ema = self.ema_start
         initial_lr = self.lr
 
         for epoch in range(epochs):

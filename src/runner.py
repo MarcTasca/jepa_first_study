@@ -79,7 +79,13 @@ class Runner:
 
     def train(self):
         self.trainer = JEPATrainer(
-            self.encoder, self.predictor, self.decoder, self.dataloader, lr=self.cfg.training.lr, device=self.device
+            self.encoder,
+            self.predictor,
+            self.decoder,
+            self.dataloader,
+            lr=self.cfg.training.lr,
+            ema_start=self.cfg.training.ema_start,
+            device=self.device,
         )
 
         self.logger.info("Starting JEPA Training (Self-Supervised)")

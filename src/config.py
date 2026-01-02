@@ -34,6 +34,7 @@ class TrainingConfig:
     jepa_epochs: int = 100
     decoder_epochs: int = 100
     lr: float = 1e-3
+    ema_start: float = 0.99
     device: str = "auto"
 
 
