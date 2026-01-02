@@ -264,20 +264,16 @@ class PixelPendulumDataset(DoublePendulumDataset):
         super().__init__(size, dt, history_length, sequence_length, data)
         self.image_size = image_size
 
-        # Pre-import PIL to avoid repeated imports
-        from PIL import Image, ImageDraw
-
-        self.Image = Image
-        self.ImageDraw = ImageDraw
-
     def render_frame(self, x1, y1, x2, y2):
         """
         Renders a single frame of the double pendulum.
         Coordinate system: center (0,0) is at image center.
         Scale: Total length (L1+L2=2) corresponds to 90% of half-width.
         """
-        img = self.Image.new("RGB", (self.image_size, self.image_size), (0, 0, 0))
-        draw = self.ImageDraw.Draw(img)
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (self.image_size, self.image_size), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
 
         cx, cy = self.image_size // 2, self.image_size // 2
         # Scale: max extent is 2.0 (L1+L2). We map 2.2 to half_width to allow margins
