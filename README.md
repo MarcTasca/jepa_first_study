@@ -74,6 +74,12 @@ To strictly verify the quality of the learned representation, we train a Decoder
 *   Python 3.10+
 *   `uv` (Universal Package Manager) or `pip`
 
+### Hardware Specifications
+*   **Device:** Apple MacBook Air M2
+*   **RAM:** 8 GB
+*   **Accelerator:** MPS (Metal Performance Shaders)
+*   *Note: This project is optimized to run efficiently on consumer-grade hardware.*
+
 ### Development Commands
 
 ```bash
