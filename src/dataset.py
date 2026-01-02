@@ -267,14 +267,25 @@ class DatasetFactory:
         config_str = json.dumps(config_dict, sort_keys=True)
         config_hash = hashlib.md5(config_str.encode("utf-8")).hexdigest()
 
-        filename = f"{config.name}_{config.size}_{config_hash}.pt"
-        return os.path.join(config.cache_dir, filename), config_dict
+        # Structure: data/{name}/{hash}/
+        # Files: dataset.pt, metadata.json
+        cache_dir = os.path.join(config.cache_dir, config.name, config_hash)
+        os.makedirs(cache_dir, exist_ok=True)
+
+        pt_path = os.path.join(cache_dir, "dataset.pt")
+        return pt_path, config_dict
 
     @staticmethod
     def get_dataset(config: DatasetConfig):
         # Ensure cache directory exists
         if config.use_cache:
-            os.makedirs(config.cache_dir, exist_ok=True)
+            # Main data dir created by get_cache_path logic or explicit makedirs
+            # We rely on get_cache_path creating the subdir now?
+            # Ideally get_cache_path shouldn't have side effects, but for simplicity let's do it there or just before.
+            # Let's keep get_cache_path pure and do makedirs here.
+            pass
+
+        if config.use_cache:
             cache_path, config_dict = DatasetFactory.get_cache_path(config)
 
             if not config.regenerate and os.path.exists(cache_path):
@@ -341,7 +352,7 @@ class DatasetFactory:
                 torch.save(dataset.data, cache_path)
 
                 # Save metadata as JSON for inspection
-                json_path = cache_path.replace(".pt", ".json")
+                json_path = cache_path.replace("dataset.pt", "metadata.json")
                 with open(json_path, "w") as f:
                     json.dump(config_dict, f, indent=4)
                 print(f"[DatasetFactory] Saved metadata to: {json_path}")
