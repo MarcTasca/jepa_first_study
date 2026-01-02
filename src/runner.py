@@ -13,6 +13,7 @@ from src.trainer import JEPATrainer
 from src.utils import setup_logger
 from src.visualization import (
     visualize_forecast,
+    visualize_image_forecast,
     visualize_image_reconstruction,
     visualize_latent_reconstruction,
 )
@@ -169,6 +170,18 @@ class Runner:
                 save_path=forecast_path,
                 num_points=self.cfg.num_vis_points,
                 history_length=self.cfg.dataset.history_length,
+            )
+        elif self.cfg.dataset.name == "pendulum_image":
+            forecast_path = os.path.join(self.run_dir, "forecast.mp4")
+            visualize_image_forecast(
+                self.encoder,
+                self.predictor,
+                self.decoder,
+                self.dataset,
+                save_path=forecast_path,
+                num_frames=self.cfg.num_vis_points,
+                history_length=self.cfg.dataset.history_length,
+                image_size=self.cfg.dataset.image_size,
             )
 
     def run(self):

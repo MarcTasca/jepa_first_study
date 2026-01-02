@@ -391,3 +391,116 @@ def visualize_image_reconstruction(
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
+
+
+def visualize_image_forecast(
+    encoder,
+    predictor,
+    decoder,
+    dataset,
+    save_path="forecast.mp4",
+    num_frames=300,
+    history_length=3,
+    image_size=64,
+):
+    """
+    Autoregressive forecasting for image-based JEPA model.
+    Shows ground truth vs predicted frames side-by-side.
+    """
+    encoder.eval()
+    predictor.eval()
+    decoder.eval()
+    device = next(encoder.parameters()).device
+
+    # Get a random sequence
+    idx = np.random.randint(len(dataset))
+    gt_sequence = dataset[idx]  # (Seq, C, H, W)
+
+    # Extract initial context (first history_length frames)
+    context_frames = gt_sequence[:history_length]  # (H, C, H, W)
+    H, C, Hei, Wid = context_frames.shape
+
+    # Encode initial context
+    x0 = context_frames.reshape(1, H * C, Hei, Wid).to(device)
+
+    # Run autoregressive prediction
+    pred_frames = []
+
+    with torch.no_grad():
+        z = encoder(x0)
+
+        for _ in range(num_frames):
+            # Predict next latent state
+            z = predictor(z)
+
+            # Decode to image
+            x_hat = decoder(z)  # (1, H*C, H, W)
+
+            # Extract last frame
+            x_hat_reshaped = x_hat.reshape(H, C, Hei, Wid)
+            last_frame = x_hat_reshaped[-1]  # (C, H, W)
+
+            pred_frames.append(last_frame.cpu())
+
+    # Convert to numpy for visualization
+    pred_frames = torch.stack(pred_frames).permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
+
+    # GT frames (skip initial context, align with predictions)
+    gt_frames = gt_sequence[history_length : history_length + num_frames]
+    gt_frames = gt_frames.permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
+
+    # Ensure we have matching lengths
+    min_len = min(len(gt_frames), len(pred_frames))
+    gt_frames = gt_frames[:min_len]
+    pred_frames = pred_frames[:min_len]
+
+    # Create side-by-side animation
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(10, 5))
+    canvas = FigureCanvasAgg(fig)
+
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax2 = fig.add_subplot(1, 2, 2)
+
+    ax1.set_title("Ground Truth")
+    ax2.set_title("JEPA Forecast")
+
+    for ax in [ax1, ax2]:
+        ax.axis("off")
+
+    frames = []
+
+    print(f"Generating forecast animation ({min_len} frames)...")
+
+    for i in range(min_len):
+        ax1.clear()
+        ax2.clear()
+
+        ax1.imshow(gt_frames[i])
+        ax1.set_title("Ground Truth")
+        ax1.axis("off")
+
+        ax2.imshow(pred_frames[i])
+        ax2.set_title("JEPA Forecast")
+        ax2.axis("off")
+
+        canvas.draw()
+        image = np.asarray(canvas.buffer_rgba())
+        image = image.copy()[:, :, :3]
+        frames.append(image)
+
+    # Save video
+    import imageio
+
+    if not save_path.endswith(".mp4"):
+        save_path = save_path.replace(".gif", ".mp4")
+
+    print(f"Saving forecast animation to {save_path}")
+
+    dirname = os.path.dirname(save_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+
+    imageio.mimsave(save_path, frames, fps=30)
