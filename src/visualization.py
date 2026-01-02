@@ -445,11 +445,23 @@ def visualize_image_forecast(
     # Convert to numpy for visualization
     pred_frames = torch.stack(pred_frames).permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
 
-    # GT frames (skip initial context, align with predictions)
-    gt_frames = gt_sequence[history_length : history_length + num_frames]
-    gt_frames = gt_frames.permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
+    # GT frames (skip initial context, show what we have)
+    available_gt = len(gt_sequence) - history_length
+    if available_gt > 0:
+        gt_frames = gt_sequence[history_length:].permute(0, 2, 3, 1).numpy()  # (T_gt, H, W, C)
+    else:
+        # No GT available, create blank frames
+        gt_frames = np.zeros((1, Hei, Wid, C))
 
-    # Ensure we have matching lengths
+    # Pad GT with last frame or black if needed to match prediction length
+    if len(gt_frames) < len(pred_frames):
+        # Repeat last GT frame for remaining predictions
+        last_frame = gt_frames[-1:] if len(gt_frames) > 0 else np.zeros((1, Hei, Wid, C))
+        padding_needed = len(pred_frames) - len(gt_frames)
+        padding = np.tile(last_frame, (padding_needed, 1, 1, 1))
+        gt_frames = np.concatenate([gt_frames, padding], axis=0)
+
+    # Use minimum length for safety
     min_len = min(len(gt_frames), len(pred_frames))
     gt_frames = gt_frames[:min_len]
     pred_frames = pred_frames[:min_len]
