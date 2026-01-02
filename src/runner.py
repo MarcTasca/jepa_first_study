@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 
@@ -25,7 +26,9 @@ class Runner:
         os.makedirs(self.run_dir, exist_ok=True)
 
         # Setup logger
-        self.logger = setup_logger(name="Runner", log_file=f"{self.run_dir}/run.log")
+        # We configure the root logger ("") so that JEPATrainer logging also works
+        setup_logger(name="", log_file=f"{self.run_dir}/run.log")
+        self.logger = logging.getLogger("Runner")
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         )
