@@ -222,7 +222,14 @@ class JEPATrainer:
                     s_target = self.target_encoder(target)
 
                 # Loss & Backprop
-                loss = criterion(s_pred, s_target)
+                mse_loss = criterion(s_pred, s_target)
+
+                # Variance Regularization (prevent collapse)
+                var_s_pred = torch.var(s_pred, dim=0)
+                var_s_target = torch.var(s_target, dim=0)
+                var_loss = torch.mean(torch.relu(1.0 - var_s_pred)) + torch.mean(torch.relu(1.0 - var_s_target))
+
+                loss = mse_loss + 1.0 * var_loss
 
                 optimizer.zero_grad()
                 loss.backward()
