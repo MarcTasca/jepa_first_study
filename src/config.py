@@ -124,6 +124,25 @@ class ExperimentConfig:
         # Visualization
         parser.add_argument("--vis_points", type=int, default=1000, help="Number of points for visualization")
 
+        # Temporal Masking (I-JEPA)
+        parser.add_argument(
+            "--use_masking",
+            action="store_true",
+            help="Enable temporal masking (I-JEPA style) instead of fixed-gap prediction",
+        )
+        parser.add_argument(
+            "--mask_ratio",
+            type=float,
+            default=default_tr.mask_ratio,
+            help=f"Fraction of frames to mask (default: {default_tr.mask_ratio})",
+        )
+        parser.add_argument(
+            "--min_context",
+            type=int,
+            default=default_tr.min_context_frames,
+            help=f"Minimum context frames (default: {default_tr.min_context_frames})",
+        )
+
         args = parser.parse_args()
 
         ds_config = DatasetConfig(
@@ -137,6 +156,9 @@ class ExperimentConfig:
             decoder_epochs=args.epochs,
             lr=args.lr,
             num_workers=args.workers,
+            use_temporal_masking=args.use_masking,
+            mask_ratio=args.mask_ratio,
+            min_context_frames=args.min_context,
         )
 
         return cls(dataset=ds_config, training=tr_config, seed=args.seed, num_vis_points=args.vis_points)
