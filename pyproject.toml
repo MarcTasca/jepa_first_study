@@ -1,18 +1,28 @@
 [project]
 name = "jepa"
 version = "0.1.0"
-description = "Add your description here"
+description = "JEPA for Dynamics Forecasting"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.8"
 dependencies = [
-    "imageio>=2.37.2",
-    "imageio-ffmpeg>=0.6.0",
-    "ipykernel>=7.1.0",
-    "matplotlib>=3.10.8",
-    "notebook>=7.5.1",
-    "numpy>=2.4.0",
-    "pip>=25.3",
-    "scikit-learn>=1.8.0",
-    "torch>=2.9.1",
-    "tqdm>=4.67.1",
+    "torch",
+    "numpy",
+    "matplotlib",
+    "imageio"
+]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
+
+[dependency-groups]
+dev = [
+    "pre-commit>=3.5.0",
+    "pytest>=8.3.5",
+    "ruff>=0.14.10",
 ]

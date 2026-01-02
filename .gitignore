@@ -8,3 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Results
+results
+
+# Validations
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# System
+.DS_Store
