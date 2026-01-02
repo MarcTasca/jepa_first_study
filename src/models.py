@@ -77,15 +77,15 @@ class VisionEncoder(nn.Module):
             raise ValueError(f"Image size {image_size} too small for 3 layers of stride 2")
 
         self.net = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(input_channels, 64, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
             nn.Flatten(),
         )
-        self.flat_dim = 128 * final_size * final_size
+        self.flat_dim = 256 * final_size * final_size
         self.fc = nn.Linear(self.flat_dim, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -105,19 +105,19 @@ class VisionDecoder(nn.Module):
         self.image_size = image_size
         self.final_size = image_size // 8
 
-        self.flat_dim = 128 * self.final_size * self.final_size
+        self.flat_dim = 256 * self.final_size * self.final_size
         self.fc = nn.Linear(embedding_dim, self.flat_dim)
 
         self.net = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
             nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, output_channels, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(64, output_channels, kernel_size=4, stride=2, padding=1),
             nn.Sigmoid(),  # Images are 0-1
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc(x)
-        x = x.view(-1, 128, self.final_size, self.final_size)
+        x = x.view(-1, 256, self.final_size, self.final_size)
         return self.net(x)

@@ -68,6 +68,9 @@ class Runner:
             persistent_workers=True if self.cfg.training.num_workers > 0 else False,
         )
         self.logger.info(f"Dataset loaded with {len(self.dataset)} samples")
+        if len(self.dataset) > 0:
+            sample = self.dataset[0]
+            self.logger.info(f"Sample Dimensions: {sample.shape}")
 
     def initialize_models(self):
         # Determine input/output dims from dataset properties

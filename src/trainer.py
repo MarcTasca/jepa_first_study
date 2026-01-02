@@ -88,8 +88,11 @@ class JEPATrainer:
             start_time = time.time()
             epoch_loss = 0
 
-            for trajectory in self.dataloader:
-                trajectory = trajectory.to(self.device)  # (B, 30, 4)
+            for i, trajectory in enumerate(self.dataloader):
+                trajectory = trajectory.to(self.device)
+
+                if epoch == 0 and i == 0:
+                    self.logger.info(f"Trajectory Shape: {trajectory.shape}")
 
                 # Dynamic Slicing
                 # History inferred from Encoder structure

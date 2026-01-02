@@ -47,10 +47,11 @@ The system is trained in two decoupled phases. The separation ensures that the r
 
 | Component | Specification | Reason |
 |-----------|---------------|--------|
-| **Latent Dim** | 64 | Enough for Double Pendulum physics (4 vars), tight enough to force abstraction. |
-| **Hidden Dim** | 512 | Wide MLP to model complex chaotic dynamics. |
-| **Predictor** | Residual | Essential for stable long-term autoregression (prevents exploding gradients). |
-| **Input** | 2 Frames | Captures velocity (position alone is ambiguous). |
+| **Vision Encoder** | CNN (64 $\to$ 128 $\to$ 256) | High capacity to capture fine spatial details (Arm 2). |
+| **Vision Decoder** | Transpose (256 $\to$ 128 $\to$ 64) | Symmetric capacity for pixel-perfect reconstruction. |
+| **Latent Dim** | 64 | Tighter abstraction than pixel space ($64 \ll 64 \times 64 \times 3$). |
+| **Predictor** | Residual MLP (512 width) | Models velocity ($\Delta z$) for stable dynamics. |
+| **Input** | 2 Frames | Minimal history to capture velocity from positions. |
 
 ---
 
