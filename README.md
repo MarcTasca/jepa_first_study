@@ -104,19 +104,33 @@ We use Mean Squared Error (MSE) for the decoder. While MSE often causes "blurry"
 2.  **Gradient Flow:** MSE provides strong, smooth gradients for position errors. If a pendulum arm is offset by 2 pixels, MSE pulls it back effectively.
 3.  **Simplicity:** It avoids the instability of GANs or the computational cost of Perceptual (VGG) losses, which are overkill for simple geometric shapes.
 
-## 🛠 Development
 
-```bash
-# Run Unit Tests
-uv run python -m pytest
+---
 
-# Run Linter & Formatter
-uv run pre-commit run --all-files
-```
+## 📚 References & Novelty
 
-## 📁 Project Structure
+### The Novelty: "Neural ODEs meet V-JEPA"
+While based on existing architectures, this implementation introduces a specific combination tailored for **continuous physical dynamics**:
 
-*   `src/models.py`: Definitions of Encoder (CNN), Predictor (ResMLP), Decoder.
-*   `src/trainer.py`: The two-phase training loop (JEPA + Decoder).
-*   `src/runner.py`: Experiment orchestration.
-*   `src/dataset.py`: On-the-fly rendering and caching of pendulum physics.
+1.  **Multistep VICReg (Trajectory Consistency):**
+    *   *Standard approach:* VICReg is typically applied to static pairs (Z_view1, Z_view2).
+    *   *Our approach:* We apply VICReg to **unrolled temporal sequences** ($z_t \to z_{t+1} \dots \to z_{t+8}$). This forces the embedding space to be not just "informative" (Covariance) but "dynamically stable" over time.
+2.  **Residual Latent Dynamics:**
+    *   Instead of predicting states ($z_{t+1}$), we model the *velocity* ($z_{t+1} = z_t + \Delta z$). Effectively, the Predictor learns the differential equation of the latent manifold, similar to a Neural ODE.
+
+### Bibliography
+
+**[1] I-JEPA**
+Assran, M., et al. (2023). "Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture". *CVPR 2023*. [arXiv:2301.08243](https://arxiv.org/abs/2301.08243)
+
+**[2] V-JEPA**
+Bardes, A., et al. (2024). "Revisiting Feature Prediction for Learning Visual Representations from Video". *TMLR 2024*. [arXiv:2404.08471](https://arxiv.org/abs/2404.08471)
+
+**[3] VICReg**
+Bardes, A., Ponce, J., & LeCun, Y. (2022). "VICReg: Variance-Invariance-Covariance Regularization for Self-Supervised Learning". *ICLR 2022*. [arXiv:2105.04906](https://arxiv.org/abs/2105.04906)
+
+**[4] Neural ODEs**
+Chen, R. T. Q., et al. (2018). "Neural Ordinary Differential Equations". *NeurIPS 2018*. [arXiv:1806.07366](https://arxiv.org/abs/1806.07366)
+
+**[5] Cosine Annealing**
+Loshchilov, I., & Hutter, F. (2016). "SGDR: Stochastic Gradient Descent with Warm Restarts". *ICLR 2017*. [arXiv:1608.03983](https://arxiv.org/abs/1608.03983)

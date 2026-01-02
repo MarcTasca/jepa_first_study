@@ -114,10 +114,11 @@ class Runner:
 
     def train(self):
         self.trainer = JEPATrainer(
-            self.encoder,
-            self.predictor,
-            self.decoder,
-            self.dataloader,
+            encoder=self.encoder,
+            predictor=self.predictor,
+            decoder=self.decoder,
+            dataloader=self.dataloader,
+            config=self.cfg,
             lr=self.cfg.training.lr,
             ema_start=self.cfg.training.ema_start,
             device=self.device,

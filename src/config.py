@@ -26,6 +26,10 @@ class DatasetConfig:
 class ModelConfig:
     hidden_dim: int = 512
     embedding_dim: int = 64  # Increased capacity for residual predictor
+    # VICReg Hyperparameters
+    sim_coeff: float = 25.0
+    std_coeff: float = 25.0
+    cov_coeff: float = 1.0
     # Input/Output dims are derived from dataset at runtime, but can be overridden if needed
     input_dim: int = 0
     output_dim: int = 0
@@ -36,6 +40,7 @@ class TrainingConfig:
     batch_size: int = 64
     jepa_epochs: int = 100
     decoder_epochs: int = 100
+    prediction_horizon: int = 8  # Multistep training horizon
     lr: float = 1e-3
     ema_start: float = 0.99
     device: str = "auto"
