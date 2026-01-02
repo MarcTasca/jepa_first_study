@@ -26,9 +26,6 @@ class JEPATrainer:
         lr: float = 1e-3,
         ema_start: float = 0.99,
         device: torch.device = torch.device("cpu"),
-        use_temporal_masking: bool = False,
-        mask_ratio: float = 0.4,
-        min_context_frames: int = 3,
     ):
         self.encoder = encoder.to(device)
         self.predictor = predictor.to(device)
@@ -37,45 +34,12 @@ class JEPATrainer:
         self.device = device
         self.lr = lr
         self.ema_start = ema_start
-        self.use_temporal_masking = use_temporal_masking
-        self.mask_ratio = mask_ratio
-        self.min_context_frames = min_context_frames
         self.logger = logging.getLogger("JEPATrainer")
 
         # Target Encoder is a copy of Encoder, updated via EMA, NO gradients
         self.target_encoder = copy.deepcopy(self.encoder)
         for param in self.target_encoder.parameters():
             param.requires_grad = False
-
-    def generate_temporal_mask(self, seq_len, mask_ratio=0.4, min_context=3):
-        """
-        Generate random temporal mask for sequence following I-JEPA philosophy.
-
-        Args:
-            seq_len: Total sequence length
-            mask_ratio: Fraction of frames to mask (target)
-            min_context: Minimum visible frames for context
-
-        Returns:
-            context_indices: Sorted list of visible frame indices
-            target_indices: Sorted list of masked frame indices
-        """
-        n_mask = int(seq_len * mask_ratio)
-        n_context = seq_len - n_mask
-
-        # Ensure minimum context
-        if n_context < min_context:
-            n_context = min_context
-            n_mask = seq_len - min_context
-
-        # Randomly select which frames to use as context
-        all_indices = np.arange(seq_len)
-        np.random.shuffle(all_indices)
-
-        context_indices = sorted(all_indices[:n_context].tolist())
-        target_indices = sorted(all_indices[n_context:].tolist())
-
-        return context_indices, target_indices
 
     def train_jepa(self, epochs: int = 50):
         """
@@ -140,64 +104,18 @@ class JEPATrainer:
                     raise ValueError("Unknown Encoder structure")
 
                 seq_len = trajectory.shape[1]
+                max_gap = 5
 
-                if self.use_temporal_masking:
-                    # Temporal Masking (I-JEPA style)
-                    ctx_idx, tgt_idx = self.generate_temporal_mask(
-                        seq_len=seq_len, mask_ratio=self.mask_ratio, min_context=self.min_context_frames
-                    )
+                # Pick valid start index t
+                max_start = seq_len - H - max_gap
+                if max_start <= 0:
+                    max_start = 1
 
-                    # Select frames
-                    context_frames = trajectory[:, ctx_idx]
-                    target_frames = trajectory[:, tgt_idx]
+                t = np.random.randint(0, max_start)
+                gap = np.random.randint(1, max_gap + 1)
 
-                    # Pad/interpolate to match encoder's expected history length
-                    # Simple padding: pad context to H frames with zeros if needed
-                    if len(ctx_idx) < H:
-                        # Pad with zeros
-                        pad_len = H - len(ctx_idx)
-                        if is_vision:
-                            B, _, C, Hei, Wid = context_frames.shape
-                            padding = torch.zeros(B, pad_len, C, Hei, Wid, device=context_frames.device)
-                        else:
-                            B, _, F = context_frames.shape
-                            padding = torch.zeros(B, pad_len, F, device=context_frames.device)
-                        context_frames = torch.cat([context_frames, padding], dim=1)
-                    elif len(ctx_idx) > H:
-                        # Truncate to H frames (keep most recent)
-                        context_frames = context_frames[:, -H:]
-
-                    # For target, also standardize size
-                    if len(tgt_idx) < H:
-                        pad_len = H - len(tgt_idx)
-                        if is_vision:
-                            B, _, C, Hei, Wid = target_frames.shape
-                            padding = torch.zeros(B, pad_len, C, Hei, Wid, device=target_frames.device)
-                        else:
-                            B, _, F = target_frames.shape
-                            padding = torch.zeros(B, pad_len, F, device=target_frames.device)
-                        target_frames = torch.cat([target_frames, padding], dim=1)
-                    elif len(tgt_idx) > H:
-                        target_frames = target_frames[:, :H]
-
-                    # Gap for predictor is the distance between last context and first target
-                    gap = tgt_idx[0] - ctx_idx[-1] if len(tgt_idx) > 0 and len(ctx_idx) > 0 else 1
-                    gap = max(1, gap)  # At least 1 step
-
-                else:
-                    # Original fixed-gap approach
-                    max_gap = 5
-
-                    # Pick valid start index t
-                    max_start = seq_len - H - max_gap
-                    if max_start <= 0:
-                        max_start = 1
-
-                    t = np.random.randint(0, max_start)
-                    gap = np.random.randint(1, max_gap + 1)
-
-                    context_frames = trajectory[:, t : t + H]
-                    target_frames = trajectory[:, t + gap : t + gap + H]
+                context_frames = trajectory[:, t : t + H]
+                target_frames = trajectory[:, t + gap : t + gap + H]
 
                 if is_vision:
                     # (B, H, C, W, H) -> (B, H*C, W, H)
@@ -225,10 +143,14 @@ class JEPATrainer:
                 mse_loss = criterion(s_pred, s_target)
 
                 # Variance Regularization (prevent collapse)
+                # Force embeddings to have non-zero variance along each dimension
                 var_s_pred = torch.var(s_pred, dim=0)
                 var_s_target = torch.var(s_target, dim=0)
+
+                # Hinge loss: penalize variance below 1.0
                 var_loss = torch.mean(torch.relu(1.0 - var_s_pred)) + torch.mean(torch.relu(1.0 - var_s_target))
 
+                # Combined loss (λ=1.0 for variance term)
                 loss = mse_loss + 1.0 * var_loss
 
                 optimizer.zero_grad()
