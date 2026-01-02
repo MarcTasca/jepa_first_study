@@ -42,6 +42,8 @@ python run.py --mode lissajous --epochs 50 --batch_size 32
 
 ```
 jepa/
+├── .github/          # CI/CD Workflows
+├── forecasting/      # Analysis & Comparison scripts
 ├── run.py            # Entry point
 ├── src/
 │   ├── config.py     # Configuration dataclasses
@@ -51,6 +53,8 @@ jepa/
 │   ├── trainer.py    # Training Logic
 │   ├── utils.py      # Utilities (Logging)
 │   └── visualization.py # Plotting & Animation
+├── tests/            # Unit Tests
+
 ```
 
 ## Components
@@ -88,7 +92,7 @@ uv add <package_name>   # Add a new dependency
 ### Testing
 Unit tests are located in `tests/` and cover models, datasets, and configuration. We use `pytest`.
 ```bash
-uv run pytest tests/
+uv run python -m pytest tests/
 ```
 
 ### Linting & Formatting
@@ -96,6 +100,16 @@ We use `ruff` for linting and formatting, configured in `pyproject.toml`.
 ```bash
 uv run ruff check .     # Check for lint errors
 uv run ruff format .    # Fix formatting issues
+```
+
+### Pre-commit Hooks
+We use `pre-commit` to ensure code quality before every commit.
+```bash
+# Install hooks (run once)
+uv run pre-commit install
+
+# Run manually (optional)
+uv run pre-commit run --all-files
 ```
 
 ### CI/CD
