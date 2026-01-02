@@ -24,8 +24,8 @@ class DatasetConfig:
 
 @dataclass
 class ModelConfig:
-    hidden_dim: int = 256
-    embedding_dim: int = 32
+    hidden_dim: int = 512
+    embedding_dim: int = 64  # Increased capacity for residual predictor
     # Input/Output dims are derived from dataset at runtime, but can be overridden if needed
     input_dim: int = 0
     output_dim: int = 0

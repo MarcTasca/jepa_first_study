@@ -36,9 +36,9 @@ Target[t+gap:t+gap+H] ──► Target Encoder (EMA) ──► z_target
 ```
 
 **Models:**
-- `Encoder` / `VisionEncoder`: Maps observations to 32-dim latent space
-- `Predictor`: Predicts next latent state
-- `Decoder` / `VisionDecoder`: Reconstructs observations (verification only)
+- `Encoder` / `VisionEncoder`: Maps observations to 64-dim latent space
+- `Predictor`: Residual MLP (`z + net(z)`) for stable dynamics
+- `Decoder` / `VisionDecoder`: Reconstructs observations
 
 ## Command Line
 
@@ -47,12 +47,25 @@ uv run python run.py \
   --mode pendulum_image \
   --size 10000 \
   --image_size 64 \
-  --epochs 100 \
+  --epochs 50 \
+  --decoder_epochs 100 \
   --batch_size 128 \
   --lr 0.001 \
-  --history_length 2 \
   --workers 0
 ```
+
+## Key Implementation Details
+
+### Residual Predictor
+To enable stable long-term forecasting, the predictor learns the *change* in state:
+```python
+z_next = z_curr + predictor(z_curr)
+```
+
+### Dynamic Schedulers
+We use **Cosine Annealing** for both learning rate and EMA decay. This ensures deep convergence:
+- **Learning Rate:** High start → Near zero end
+- **EMA Decay:** Lower start (fast updates) → Near 1.0 end (stable target)
 
 ## Outputs
 

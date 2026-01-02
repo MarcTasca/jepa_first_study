@@ -56,7 +56,7 @@ class JEPATrainer:
         self.encoder.train()
         self.predictor.train()
 
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
 
         # Base EMA decay when LR is at initial value
         base_ema = self.ema_start
@@ -139,8 +139,14 @@ class JEPATrainer:
                 with torch.no_grad():
                     s_target = self.target_encoder(target)
 
-                # Loss & Backprop (simple MSE only)
-                loss = criterion(s_pred, s_target)
+                # Loss & Backprop
+                mse_loss = criterion(s_pred, s_target)
+
+                # Soft variance nudge (just enough to prevent collapse, not dominate)
+                std_pred = torch.sqrt(torch.var(s_pred, dim=0) + 1e-4)
+                std_loss = torch.mean(torch.relu(1.0 - std_pred))
+
+                loss = mse_loss + 0.1 * std_loss  # λ=0.1 (soft nudge)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -160,7 +166,7 @@ class JEPATrainer:
                 f"JEPA Epoch {epoch + 1}/{epochs}: Loss = {avg_loss:.6f} | "
                 f"Time: {epoch_duration:.2f}s | LR: {current_lr:.2e} | EMA: {ema_decay:.5f}"
             )
-            scheduler.step(avg_loss)
+            scheduler.step()
 
     def train_decoder(self, epochs=50):
         """
@@ -169,7 +175,7 @@ class JEPATrainer:
         """
         optimizer = optim.Adam(self.decoder.parameters(), lr=self.lr)
         criterion = nn.MSELoss()
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
 
         self.logger.info(f"\nStarting Decoder Training for {epochs} epochs...")
         self.decoder.train()
@@ -231,4 +237,4 @@ class JEPATrainer:
                 f"Decoder Epoch {epoch + 1}/{epochs}: Loss = {avg_loss:.6f} | "
                 f"Time: {epoch_duration:.2f}s | LR: {current_lr:.2e}"
             )
-            scheduler.step(avg_loss)
+            scheduler.step()
