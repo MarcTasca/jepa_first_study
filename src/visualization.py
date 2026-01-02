@@ -373,8 +373,8 @@ def visualize_image_reconstruction(
         orig_img = context_frames[-1].permute(1, 2, 0).numpy()  # (H, W, 3)
 
         # Reconstructed Last Frame
-        rec_cpu = rec.cpu().view(H, C, Hei, Wid)
-        rec_img = rec_cpu[0, -1].permute(1, 2, 0).numpy()  # (H, W, 3)
+        rec_cpu = rec.cpu().reshape(H, C, Hei, Wid)
+        rec_img = rec_cpu[-1].permute(1, 2, 0).numpy()  # (H, W, 3)
 
         ax_orig = axes[i, 0] if num_samples > 1 else axes[0]
         ax_rec = axes[i, 1] if num_samples > 1 else axes[1]
