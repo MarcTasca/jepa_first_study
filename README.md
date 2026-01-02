@@ -1,125 +1,112 @@
-# JEPA for Visual Dynamics (I-JEPA Implementation)
+# Non-Contrastive Learning of Physical Dynamics (JEPA)
 
-A PyTorch implementation of **Joint Embedding Predictive Architecture (JEPA)** applied to physical dynamics (Double Pendulum). This project explores how self-supervised learning can acquire a "world model" of physics directly from pixels, without reconstruction loss in the representation space.
+A PyTorch implementation of **Joint Embedding Predictive Architecture (JEPA)** designed to learn continuous physical dynamics directly from high-dimensional observations (pixels), without relying on reconstruction-based losses in the representation learning phase. This project applies Self-Supervised Learning (SSL) to capture the underlying differential equations of a chaotic double pendulum.
 
-## 🧠 Core Strategy
+## Abstract
 
-The model creates a compressed "mental representation" (latent space) of the world and learns to predict how that representation evolves over time.
-
-### 1. The Components
-*   **Context Encoder (`VisionEncoder`):** Maps a stack of 2 past frames ($x_{t}, x_{t-1}$) to a latent state $z_t$.
-*   **Target Encoder (EMA Teacher):** A slowly moving copy of the encoder. It maps future frames ($x_{t+k}$) to targets $z_{t+k}$. It provides stable targets for learning.
-*   **Predictor (Residual MLP):** Learns the physics. Given $z_t$, it predicts $z_{t+k}$.
-    *   *Residual Architecture:* $s_{next} = s_{curr} + \text{Net}(s_{curr})$. This forces the network to learn the *updates* (velocity) rather than absolute states, preventing drift.
-*   **Decoder (`VisionDecoder`):** Maps latents back to pixels. *Used only for verification*, not for JEPA training.
-
-### 2. The Training Recipe
-The system is trained in two decoupled phases. The separation ensures that the representation is learned purely from dynamics (Phase 1), not from pixel reconstruction.
-
-#### Phase 1: JEPA (Self-Supervised Dynamics)
-*Goal: Learn a latent space where dynamics are linear/predictable.*
-
-1.  **Stop-Gradient Target:** We feed future frames $x_{t+k}$ into the **Target Encoder** to get $z_{target}$. Crucially, **gradients are not propagated** through the Target Encoder.
-2.  **EMA Update:** The Target Encoder weights ($\phi$) are updated as an exponential moving average of the Context Encoder weights ($\theta$):
-    $$ \phi_t = \mu \phi_{t-1} + (1 - \mu) \theta_t $$
-    *   $\mu$ increases from 0.99 to 1.0 during training (Cosine Schedule).
-3.  **Forward Pass:**
-    *   Context $x_t \to$ Encoder $\to z_t$.
-    *   $z_t \to$ Predictor $\to \hat{z}_{t+k}$ (Residual prediction).
-4.  **Loss Calculation:**
-    $$ L = \underbrace{|| \hat{z}_{t+k} - z_{target} ||^2}_{\text{MSE: Match Dynamics}} + \underbrace{0.1 \cdot \text{ReLU}(1.0 - \sigma(z))}_{\text{Reg: Prevent Collapse}} $$
-
-#### Phase 2: Decoder (Verification / Grounding)
-*Goal: Verify what information is actually captured in the latent space.*
-
-1.  **Frozen Encoder:** The `VisionEncoder` weights are **locked** (`requires_grad=False`). We strictly evaluate the representation learned in Phase 1.
-2.  **Supervised Reconstruction:**
-    *   Input: Frozen latent $z_t$ from Phase 1.
-    *   Target: Original pixels $x_t$.
-    *   Network: `VisionDecoder` (MLP or CNN Transpose).
-3.  **Optimization:** Standard MSE Loss between predicted pixels and actual pixels.
-    $$ L_{dec} = || \text{Decoder}(z_t) - x_t ||^2 $$
-    *   *Note:* If $L_{dec}$ is low, it proves $z_t$ contains shape/position info. If $L_{dec}$ is high, the encoder failed to capture the physical state.
+Self-supervised learning has shown remarkable success in verifying semantic content in static images (I-JEPA) and videos (V-JEPA). This work extends these principles to **continuous physical systems**, specifically targeting the challenge of long-term autoregressive forecasting in latent space. By combining **Multistep VICReg Regularization** with **Residual Predictive Dynamics**, we enforce a representation that is not only informative but also temporally consistent and stable, effectively learning a "Neural ODE" of the system's manifold.
 
 ---
 
-## 🏗 Architecture Details
+## Methodology
 
-| Component | Specification | Reason |
-|-----------|---------------|--------|
-| **Vision Encoder** | CNN (64 $\to$ 128 $\to$ 256) | High capacity to capture fine spatial details (Arm 2). |
-| **Vision Decoder** | Transpose (256 $\to$ 128 $\to$ 64) | Symmetric capacity for pixel-perfect reconstruction. |
-| **Latent Dim** | 64 | Tighter abstraction than pixel space ($64 \ll 64 \times 64 \times 3$). |
-| **Predictor** | Residual MLP (512 width) | Models velocity ($\Delta z$) for stable dynamics. |
-| **Input** | 2 Frames | Minimal history to capture velocity from positions. |
+### 1. Joint Embedding Predictive Architecture (JEPA)
+The core architecture consists of three components trained to minimize prediction error in latent space:
+
+*   **Context Encoder ($E_\theta$):** Maps a short history of frames ($x_{t-k} \dots x_t$) to a latent state $z_t$.
+*   **Target Encoder ($E_\phi$):** An Exponential Moving Average (EMA) of the Context Encoder. It provides stable regression targets ($z_{t+k}$) for future states.
+    *   Update rule: $\phi_t \leftarrow \mu \phi_{t-1} + (1 - \mu) \theta_t$
+*   **Residual Predictor ($P_\psi$):** A wide MLP that models the *state transition* rather than the state itself.
+    *   Formulation: $z_{t+1} = z_t + P_\psi(z_t)$
+    *   Rationale: This residual formulation mimics the structure of Euler integration in ODEs ($s_{t+1} = s_t + \Delta t \cdot f(s_t)$), preventing gradient explosion and drift during long-horizon unrolling.
+
+### 2. Multistep VICReg (Trajectory Consistency)
+Unlike standard VICReg which operates on static multiview pairs, we introduce a **Multistep** variant tailored for dynamics. We unroll the predictor for $H$ steps and apply regularization at every step of the trajectory.
+
+The total loss $\mathcal{L}$ is a weighted sum of three components averaged over the prediction horizon $H$:
+
+$$ \mathcal{L} = \frac{1}{H} \sum_{k=1}^{H} \left( \lambda \mathcal{L}_{inv}^{(k)} + \mu \mathcal{L}_{var}^{(k)} + \nu \mathcal{L}_{cov}^{(k)} \right) $$
+
+1.  **Invariance ($\mathcal{L}_{inv}$):** Standard MSE between predicted state $\hat{z}_{t+k}$ and target state $z_{t+k}$.
+2.  **Variance ($\mathcal{L}_{var}$):** Hinge loss enforcing the standard deviation of each embedding dimension to be at least 1, preventing collapse to a single point.
+3.  **Covariance ($\mathcal{L}_{cov}$):** Penalizes off-diagonal elements of the embedding covariance matrix, forcing dimensions to be decorrelated and maximizing information content.
+
+### 3. Decoupled Decoder Training
+To strictly verify the quality of the learned representation, we train a Decoder **after** the JEPA phase is complete. The Encoder is frozen (`requires_grad=False`), and the Decoder attempts to reconstruct pixels $x_t$ from $z_t$. High reconstruction quality confirms that the self-supervised phase captured the necessary physical state information.
 
 ---
 
-## 🚀 Usage
+## System Architecture
 
-### 1. Quick Start
-Train the model on the chaotic Double Pendulum dataset:
+| Component | Specification | Rationale |
+| :--- | :--- | :--- |
+| **Vision Encoder** | CNN (64 $\to$ 128 $\to$ 256 ch) | High-capacity feature extraction to resolve fine details (e.g., the second arm of the pendulum). |
+| **Vision Decoder** | Transpose Conv (256 $\to$ 128 $\to$ 64 ch) | Symmetric capacity to ensure pixel-perfect reconstruction during verification. |
+| **Latent Dim** | 64 | Tighter abstraction than pixel space ($64 \ll 64 \times 64 \times 3$), forcing semantic compression. |
+| **Predictor** | Residual MLP (512 width) | Models the velocity field ($\frac{dz}{dt}$) of the latent manifold. |
+| **Input History** | 2 Frames | Minimal temporal context required to infer velocity from static positions. |
+
+---
+
+## Technical Implementation
+
+### Training Curriculum
+1.  **Phase I: Dynamics Learning (JEPA)**
+    *   **Objective:** Minimize Multistep VICReg loss.
+    *   **Mechanism:** Unrolls predictions for 8 steps (Horizon). Backpropagates through time (BPTT).
+    *   **Scheduler:** `ReduceLROnPlateau` (Patience=5) to fine-tune convergence.
+2.  **Phase II: Grounding (Decoder)**
+    *   **Objective:** Minimize Pixel MSE ($|| \hat{x} - x ||^2$).
+    *   **Constraint:** Encoder is frozen.
+    *   **Result:** Proves that $z_t$ maps isomorphically to the physical state.
+
+### Codebase Structure
+*   `src/models.py`: Definitions of the Scaled Vision Encoder/Decoder and Residual Predictor.
+*   `src/trainer.py`: Implementation of the dual-phase training loop and Multistep VICReg loss.
+*   `src/runner.py`: Experiment orchestration and logging.
+*   `src/dataset.py`: On-the-fly Runge-Kutta 4 (RK4) physics rendering and data caching.
+
+---
+
+## Usage
+
+### Prerequisites
+*   Python 3.10+
+*   `uv` (Universal Package Manager) or `pip`
+
+### Development Commands
+
+```bash
+# Run Unit Tests
+uv run python -m pytest
+
+# Run Linter & Formatter
+uv run pre-commit run --all-files
+```
+
+### Training
+
+To reproduce the full experiment on the Double Pendulum dataset:
 
 ```bash
 uv run python run.py \
   --mode pendulum_image \
+  --size 10000 \
+  --image_size 64 \
   --epochs 50 \
   --decoder_epochs 100 \
-  --batch_size 128 \
-  --image_size 64
+  --batch_size 256
 ```
 
-### 2. Key Arguments
-*   `--mode`: `pendulum_image` (pixels) or `pendulum` (coordinates).
-*   `--epochs`: JEPA training epochs (Phase 1).
-*   `--decoder_epochs`: Independent decoder training (Phase 2).
-*   `--size`: Dataset size (default 10000).
-
-### 3. Output
-Artifacts are saved to `results/<mode>_<timestamp>/`:
-*   `forecast.mp4`: Side-by-side video of Ground Truth, Forecast, and Reconstruction.
-*   `reconstruction.png`: Static comparison.
-*   `models/*.pth`: Saved weights.
+### Key Arguments
+*   `--mode`: Selects the dataset (`pendulum_image` for pixels, `pendulum` for raw coordinates).
+*   `--prediction_horizon`: Number of autoregressive steps to unroll during training (Default: 8).
+*   `--batch_size`: Larger batch sizes (e.g., 256) provide better statistics for the VICReg Covariance loss.
+*   `--decoder_epochs`: Duration of the verification phase (Phase II).
 
 ---
 
-## 🔬 Known Phenomena
-
-### Representation Collapse
-Without regularization, JEPA reduces to a constant output ($z=0$) because that perfectly satisfies $\text{MSE}(0, 0) = 0$.
-**Our Solution:** A lightweight variance penalty ($\lambda=0.1$) pushes the embeddings apart just enough to be useful, without distorting the manifold.
-
-### Forecasting "Blindness"
-If the Predictor is weak, it may only learn "identity" ($z_{t+1} \approx z_t$).
-**Our Solution:** Residual connections ($z + \Delta$) and high capacity (512 width) enable learning the subtle gradients of chaotic motion.
-
----
-
----
-
-## ⚖️ Design Choices
-
-### Why MSE for Image Decoding?
-We use Mean Squared Error (MSE) for the decoder. While MSE often causes "blurry" results in natural image generation (due to averaging multiple modes), it works well here because:
-1.  **Deterministic Geometry:** The mapping from physical state (angles) to pixels is rigid. There is no ambiguity like in texture generation.
-2.  **Gradient Flow:** MSE provides strong, smooth gradients for position errors. If a pendulum arm is offset by 2 pixels, MSE pulls it back effectively.
-3.  **Simplicity:** It avoids the instability of GANs or the computational cost of Perceptual (VGG) losses, which are overkill for simple geometric shapes.
-
-
----
-
-## 📚 References & Novelty
-
-### The Novelty: "Neural ODEs meet V-JEPA"
-While based on existing architectures, this implementation introduces a specific combination tailored for **continuous physical dynamics**:
-
-1.  **Multistep VICReg (Trajectory Consistency):**
-    *   *Standard approach:* VICReg is typically applied to static pairs (Z_view1, Z_view2).
-    *   *Our approach:* We apply VICReg to **unrolled temporal sequences** ($z_t \to z_{t+1} \dots \to z_{t+8}$). This forces the embedding space to be not just "informative" (Covariance) but "dynamically stable" over time.
-2.  **Residual Latent Dynamics:**
-    *   Instead of predicting states ($z_{t+1}$), we model the *velocity* ($z_{t+1} = z_t + \Delta z$). Effectively, the Predictor learns the differential equation of the latent manifold, similar to a Neural ODE.
-
-### Bibliography
+## References
 
 **[1] I-JEPA**
 Assran, M., et al. (2023). "Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture". *CVPR 2023*. [arXiv:2301.08243](https://arxiv.org/abs/2301.08243)
@@ -132,3 +119,6 @@ Bardes, A., Ponce, J., & LeCun, Y. (2022). "VICReg: Variance-Invariance-Covarian
 
 **[4] Neural ODEs**
 Chen, R. T. Q., et al. (2018). "Neural Ordinary Differential Equations". *NeurIPS 2018*. [arXiv:1806.07366](https://arxiv.org/abs/1806.07366)
+
+**[5] Barlow Twins**
+Zbontar, J., Jing, L., Misra, I., LeCun, Y., & Deny, S. (2021). "Barlow Twins: Self-Supervised Learning via Redundancy Reduction". *ICML 2021*. [arXiv:2103.03230](https://arxiv.org/abs/2103.03230)
