@@ -268,31 +268,37 @@ class PixelPendulumDataset(DoublePendulumDataset):
         self.precompute = precompute
 
         if self.precompute:
-            print(
-                f"[PixelPendulumDataset] Pre-computing {size} sequences of "
-                f"{image_size}x{image_size} images into RAM..."
-            )
-            # We must verify we have enough RAM
-            # Estimate: size * sequence * 3 * H * W * 4 bytes
-            # 10k * 30 * 3 * 32 * 32 * 4 = ~3.6 GB for 32x32?
-            # Wait: 10,000 * 30 * 3 * 32 * 32 * 4 / 1024^3 = 3.5 GB
-            # 100k samples -> 35 GB.
-            # We must warn or limit.
+            # Check if data provided is already rendered (from cache)
+            if self.data is not None and self.data.ndim == 5:
+                # Already (N, Seq, 3, H, W)
+                print("[PixelPendulumDataset] Loaded pre-computed images from cache. Skipping render.")
+                # self.data is already set by super()
+            else:
+                print(
+                    f"[PixelPendulumDataset] Pre-computing {size} sequences of "
+                    f"{image_size}x{image_size} images into RAM..."
+                )
+                # We must verify we have enough RAM
+                # Estimate: size * sequence * 3 * H * W * 4 bytes
+                # 10k * 30 * 3 * 32 * 32 * 4 = ~3.6 GB for 32x32?
+                # Wait: 10,000 * 30 * 3 * 32 * 32 * 4 / 1024^3 = 3.5 GB
+                # 100k samples -> 35 GB.
+                # We must warn or limit.
 
-            rendered_data = []
-            for i in tqdm(range(len(self.data)), desc="Rendering", unit="seq"):
-                coords = self.data[i]
-                frames = []
-                for t in range(len(coords)):
-                    x1, y1, x2, y2 = coords[t]
-                    frame = self.render_frame(x1.item(), y1.item(), x2.item(), y2.item())
-                    frames.append(frame)
-                rendered_data.append(torch.stack(frames))
+                rendered_data = []
+                for i in tqdm(range(len(self.data)), desc="Rendering", unit="seq"):
+                    coords = self.data[i]
+                    frames = []
+                    for t in range(len(coords)):
+                        x1, y1, x2, y2 = coords[t]
+                        frame = self.render_frame(x1.item(), y1.item(), x2.item(), y2.item())
+                        frames.append(frame)
+                    rendered_data.append(torch.stack(frames))
 
-            print("Rendering complete.")
-            self.data = torch.stack(rendered_data)
-            # Now self.data is (N, Seq, 3, H, W)
-            # We no longer need the coordinate data, it is overwritten.
+                print("Rendering complete.")
+                self.data = torch.stack(rendered_data)
+                # Now self.data is (N, Seq, 3, H, W)
+                # We no longer need the coordinate data, it is overwritten.
 
     def render_frame(self, x1, y1, x2, y2):
         """
