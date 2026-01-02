@@ -250,7 +250,7 @@ class DatasetFactory:
     """
 
     @staticmethod
-    def get_cache_path(config: DatasetConfig) -> str:
+    def get_cache_path(config: DatasetConfig) -> Tuple[str, dict]:
         """Generates a unique cache filename based on config parameters."""
         # Create a unique hash based on relevant config parameters
         # We assume the Global Seed is handled externally or consistent
@@ -268,14 +268,14 @@ class DatasetFactory:
         config_hash = hashlib.md5(config_str.encode("utf-8")).hexdigest()
 
         filename = f"{config.name}_{config.size}_{config_hash}.pt"
-        return os.path.join(config.cache_dir, filename)
+        return os.path.join(config.cache_dir, filename), config_dict
 
     @staticmethod
     def get_dataset(config: DatasetConfig):
         # Ensure cache directory exists
         if config.use_cache:
             os.makedirs(config.cache_dir, exist_ok=True)
-            cache_path = DatasetFactory.get_cache_path(config)
+            cache_path, config_dict = DatasetFactory.get_cache_path(config)
 
             if not config.regenerate and os.path.exists(cache_path):
                 print(f"[DatasetFactory] Loading cached dataset from {cache_path}")
@@ -336,9 +336,16 @@ class DatasetFactory:
         # Save to cache if enabled
         if config.use_cache:
             try:
-                cache_path = DatasetFactory.get_cache_path(config)
+                cache_path, config_dict = DatasetFactory.get_cache_path(config)
                 print(f"[DatasetFactory] Saving dataset to cache: {cache_path}")
                 torch.save(dataset.data, cache_path)
+
+                # Save metadata as JSON for inspection
+                json_path = cache_path.replace(".pt", ".json")
+                with open(json_path, "w") as f:
+                    json.dump(config_dict, f, indent=4)
+                print(f"[DatasetFactory] Saved metadata to: {json_path}")
+
             except Exception as e:
                 print(f"[DatasetFactory] Failed to save cache: {e}")
 
