@@ -412,12 +412,68 @@ def visualize_image_forecast(
     decoder.eval()
     device = next(encoder.parameters()).device
 
-    # Get a random sequence
-    idx = np.random.randint(len(dataset))
-    gt_sequence = dataset[idx]  # (Seq, C, H, W)
+    # Import physics simulator for ground truth
+    from src.dataset import DoublePendulumDataset
 
-    # Extract initial context (first history_length frames)
-    context_frames = gt_sequence[:history_length]  # (H, C, H, W)
+    # Create a fresh physics simulation for ground truth
+    # Use same parameters as dataset
+    physics_sim = DoublePendulumDataset(size=1, history_length=history_length)
+
+    # Random initial state
+    state = np.random.rand(4) * 2 * np.pi
+    state[2:] *= 1.0  # Scale velocities
+
+    # Simulate physics for initial context + num_frames
+    total_frames = history_length + num_frames
+    gt_coords = []
+
+    for _ in range(total_frames):
+        theta1, theta2 = state[0], state[1]
+        x1 = physics_sim.L1 * np.sin(theta1)
+        y1 = -physics_sim.L1 * np.cos(theta1)
+        x2 = x1 + physics_sim.L2 * np.sin(theta2)
+        y2 = y1 - physics_sim.L2 * np.cos(theta2)
+        gt_coords.append([x1, y1, x2, y2])
+        state = physics_sim.rk4_step(state, physics_sim.dt)
+
+    gt_coords = np.array(gt_coords)
+
+    # Render GT frames as images
+    # Create a temporary renderer (reuse PixelPendulumDataset logic)
+    def render_pendulum_frame(x1, y1, x2, y2, img_size):
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (img_size, img_size), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        cx, cy = img_size // 2, img_size // 2
+        scale = (img_size / 2) / 2.2
+
+        px0, py0 = cx, cy
+        px1, py1 = cx + x1 * scale, cy - y1 * scale
+        px2, py2 = cx + x2 * scale, cy - y2 * scale
+
+        draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
+        draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
+
+        r = 2
+        draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))
+        draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))
+
+        img_np = np.array(img, dtype=np.float32) / 255.0
+        tensor = torch.from_numpy(img_np).permute(2, 0, 1)
+        return tensor
+
+    # Render all GT frames
+    gt_frames_list = []
+    for coord in gt_coords:
+        frame = render_pendulum_frame(coord[0], coord[1], coord[2], coord[3], image_size)
+        gt_frames_list.append(frame)
+
+    gt_frames_tensor = torch.stack(gt_frames_list)  # (total_frames, C, H, W)
+
+    # Extract initial context for JEPA
+    context_frames = gt_frames_tensor[:history_length]  # (H, C, H, W)
     H, C, Hei, Wid = context_frames.shape
 
     # Encode initial context
@@ -445,21 +501,8 @@ def visualize_image_forecast(
     # Convert to numpy for visualization
     pred_frames = torch.stack(pred_frames).permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
 
-    # GT frames (skip initial context, show what we have)
-    available_gt = len(gt_sequence) - history_length
-    if available_gt > 0:
-        gt_frames = gt_sequence[history_length:].permute(0, 2, 3, 1).numpy()  # (T_gt, H, W, C)
-    else:
-        # No GT available, create blank frames
-        gt_frames = np.zeros((1, Hei, Wid, C))
-
-    # Pad GT with last frame or black if needed to match prediction length
-    if len(gt_frames) < len(pred_frames):
-        # Repeat last GT frame for remaining predictions
-        last_frame = gt_frames[-1:] if len(gt_frames) > 0 else np.zeros((1, Hei, Wid, C))
-        padding_needed = len(pred_frames) - len(gt_frames)
-        padding = np.tile(last_frame, (padding_needed, 1, 1, 1))
-        gt_frames = np.concatenate([gt_frames, padding], axis=0)
+    # GT frames (skip initial context)
+    gt_frames = gt_frames_tensor[history_length:].permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
 
     # Use minimum length for safety
     min_len = min(len(gt_frames), len(pred_frames))
