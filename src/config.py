@@ -43,6 +43,10 @@ class TrainingConfig:
     num_workers: int = 4
     prefetch_factor: int = 2
     pin_memory: bool = True
+    # Temporal masking (I-JEPA style)
+    use_temporal_masking: bool = False
+    mask_ratio: float = 0.4
+    min_context_frames: int = 3
 
 
 @dataclass

@@ -121,6 +121,9 @@ class Runner:
             lr=self.cfg.training.lr,
             ema_start=self.cfg.training.ema_start,
             device=self.device,
+            use_temporal_masking=self.cfg.training.use_temporal_masking,
+            mask_ratio=self.cfg.training.mask_ratio,
+            min_context_frames=self.cfg.training.min_context_frames,
         )
 
         self.logger.info("Starting JEPA Training (Self-Supervised)")
