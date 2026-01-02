@@ -12,7 +12,10 @@ class DatasetConfig:
     # Specific to some datasets
     spiral_loops: int = 3
     lissajous_a: int = 3
+    lissajous_a: int = 3
     lissajous_b: int = 5
+    # Visual datasets
+    image_size: int = 64
     # Caching
     cache_dir: str = "data"
     use_cache: bool = True

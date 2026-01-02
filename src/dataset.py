@@ -243,6 +243,83 @@ class DoublePendulumDataset(torch.utils.data.Dataset):
         return self.data[index]
 
 
+class PixelPendulumDataset(DoublePendulumDataset):
+    """
+    Renders Double Pendulum trajectories as pixel frames.
+    Input: Coordinates from DoublePendulumDataset
+    Output: RGB Image Sequence (Sequence, 3, H, W)
+    """
+
+    def __init__(
+        self,
+        size: int = 100000,
+        dt: float = 0.05,
+        history_length: int = 3,
+        sequence_length: int = 30,
+        image_size: int = 64,
+        data: Optional[torch.Tensor] = None,
+    ):
+        # We reuse the physics simulation from the parent class
+        # This populates self.data with coordinates
+        super().__init__(size, dt, history_length, sequence_length, data)
+        self.image_size = image_size
+
+        # Pre-import PIL to avoid repeated imports
+        from PIL import Image, ImageDraw
+
+        self.Image = Image
+        self.ImageDraw = ImageDraw
+
+    def render_frame(self, x1, y1, x2, y2):
+        """
+        Renders a single frame of the double pendulum.
+        Coordinate system: center (0,0) is at image center.
+        Scale: Total length (L1+L2=2) corresponds to 90% of half-width.
+        """
+        img = self.Image.new("RGB", (self.image_size, self.image_size), (0, 0, 0))
+        draw = self.ImageDraw.Draw(img)
+
+        cx, cy = self.image_size // 2, self.image_size // 2
+        # Scale: max extent is 2.0 (L1+L2). We map 2.2 to half_width to allow margins
+        scale = (self.image_size / 2) / 2.2
+
+        # Transform coords to pixels
+        # y is typically up in physics but down in images. We'll invert y.
+        px0, py0 = cx, cy
+        px1, py1 = cx + x1 * scale, cy - y1 * scale
+        px2, py2 = cx + x2 * scale, cy - y2 * scale
+
+        # Draw rods
+        # Rod 1: Origin to P1 (Cyan)
+        draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
+        # Rod 2: P1 to P2 (Magenta)
+        draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
+
+        # Draw masses (circles)
+        r = 2  # radius of mass
+        draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))  # Yellow
+        draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))  # Red
+
+        # Convert to tensor (C, H, W) normalized to [0,1]
+        img_np = np.array(img, dtype=np.float32) / 255.0
+        tensor = torch.from_numpy(img_np).permute(2, 0, 1)  # (H,W,C) -> (C,H,W)
+
+        return tensor
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        # Get coordinate trajectory from parent: (Seq, 4)
+        coords = self.data[index]  # Tensor
+
+        frames = []
+        for t in range(len(coords)):
+            x1, y1, x2, y2 = coords[t]
+            frame = self.render_frame(x1.item(), y1.item(), x2.item(), y2.item())
+            frames.append(frame)
+
+        # Stack to (Seq, C, H, W)
+        return torch.stack(frames)
+
+
 class DatasetFactory:
     """
     Factory to instantiate datasets based on configuration.
@@ -318,6 +395,17 @@ class DatasetFactory:
                             sequence_length=config.sequence_length,
                             data=data,
                         )
+                    elif config.name == "pendulum_image":
+                        # For image dataset, the CACHED data is still coordinates!
+                        # We just load it into PIxelPendulumDataset which renders on-the-fly.
+                        return PixelPendulumDataset(
+                            size=config.size,
+                            dt=config.dt,
+                            history_length=config.history_length,
+                            sequence_length=config.sequence_length,
+                            image_size=config.image_size,
+                            data=data,
+                        )
                 except Exception as e:
                     print(f"[DatasetFactory] Failed to load cache: {e}. Regenerating...")
 
@@ -340,6 +428,14 @@ class DatasetFactory:
                 dt=config.dt,
                 history_length=config.history_length,
                 sequence_length=config.sequence_length,
+            )
+        elif config.name == "pendulum_image":
+            dataset = PixelPendulumDataset(
+                size=config.size,
+                dt=config.dt,
+                history_length=config.history_length,
+                sequence_length=config.sequence_length,
+                image_size=config.image_size,
             )
         else:
             raise ValueError(f"Unknown dataset name: {config.name}")
