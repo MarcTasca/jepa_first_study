@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from src.config import DatasetConfig
 
@@ -279,10 +280,7 @@ class PixelPendulumDataset(DoublePendulumDataset):
             # We must warn or limit.
 
             rendered_data = []
-            for i in range(len(self.data)):
-                if i % 1000 == 0:
-                    print(f"Rendering {i}/{size}...", end="\r")
-
+            for i in tqdm(range(len(self.data)), desc="Rendering", unit="seq"):
                 coords = self.data[i]
                 frames = []
                 for t in range(len(coords)):
