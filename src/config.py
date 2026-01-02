@@ -33,7 +33,7 @@ class TrainingConfig:
     batch_size: int = 64
     jepa_epochs: int = 100
     decoder_epochs: int = 100
-    lr: float = 1e-2
+    lr: float = 1e-3
     ema_start: float = 0.99
     device: str = "auto"
     # Dataloader optimization
