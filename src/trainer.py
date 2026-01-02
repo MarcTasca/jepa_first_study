@@ -55,12 +55,20 @@ class JEPATrainer:
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
+        # Base EMA decay when LR is at initial value
+        base_ema = 0.99
+        initial_lr = self.lr
+
         for epoch in range(epochs):
             # Dynamic EMA-LR Coupling
-            # EMA = 1.0 - k * LR
-            # If LR=1e-3, EMA=0.95. If LR drops, EMA increases towards 1.0.
+            # EMA_decay = 1.0 - (1.0 - base_ema) * (current_lr / initial_lr)
+            # This ensures EMA decay approaches 1.0 as LR approaches 0.
+            # Example:
+            # If LR = initial_lr, EMA = 0.99
+            # If LR = initial_lr * 0.1, EMA = 0.999
             current_lr = optimizer.param_groups[0]["lr"]
-            ema_decay = 1.0 - (10.0 * current_lr)
+            ema_decay = 1.0 - (1.0 - base_ema) * (current_lr / initial_lr)
+
             # Clip for safety
             ema_decay = max(0.9, min(1.0, ema_decay))
 
