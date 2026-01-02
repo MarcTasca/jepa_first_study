@@ -33,7 +33,7 @@ class TrainingConfig:
     batch_size: int = 64
     jepa_epochs: int = 100
     decoder_epochs: int = 100
-    lr: float = 1e-3
+    lr: float = 1e-2
     ema_start: float = 0.99
     device: str = "auto"
     # Dataloader optimization
@@ -57,19 +57,56 @@ class ExperimentConfig:
     def from_args(cls) -> "ExperimentConfig":
         parser = argparse.ArgumentParser(description="JEPA Experiment Runner")
 
+        # Get defaults from the dataclasses
+        default_ds = DatasetConfig()
+        default_tr = TrainingConfig()
+
         # Dataset
         parser.add_argument(
-            "--mode", type=str, default="pendulum", help="Dataset mode: circle, spiral, lissajous, pendulum"
+            "--mode",
+            type=str,
+            default=default_ds.name,
+            help=f"Dataset mode: circle, spiral, lissajous, pendulum (default: {default_ds.name})",
         )
-        parser.add_argument("--size", type=int, default=100000, help="Dataset size")
-        parser.add_argument("--history_length", type=int, default=2, help="Number of history frames")
+        parser.add_argument(
+            "--size",
+            type=int,
+            default=default_ds.size,
+            help=f"Dataset size (default: {default_ds.size})",
+        )
+        parser.add_argument(
+            "--history_length",
+            type=int,
+            default=default_ds.history_length,
+            help=f"Number of history frames (default: {default_ds.history_length})",
+        )
 
         # Training
-        parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
-        parser.add_argument("--epochs", type=int, default=100, help="Epochs for JEPA training (and Decoder)")
-        parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+        parser.add_argument(
+            "--batch_size",
+            type=int,
+            default=default_tr.batch_size,
+            help=f"Batch size (default: {default_tr.batch_size})",
+        )
+        parser.add_argument(
+            "--epochs",
+            type=int,
+            default=default_tr.jepa_epochs,
+            help=f"Epochs for JEPA training (and Decoder) (default: {default_tr.jepa_epochs})",
+        )
+        parser.add_argument(
+            "--lr",
+            type=float,
+            default=default_tr.lr,
+            help=f"Learning rate (default: {default_tr.lr})",
+        )
         parser.add_argument("--seed", type=int, default=42, help="Random seed")
-        parser.add_argument("--workers", type=int, default=4, help="Num workers")
+        parser.add_argument(
+            "--workers",
+            type=int,
+            default=default_tr.num_workers,
+            help=f"Num workers (default: {default_tr.num_workers})",
+        )
 
         # Visualization
         parser.add_argument("--vis_points", type=int, default=1000, help="Number of points for visualization")
