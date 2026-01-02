@@ -1,13 +1,14 @@
 import copy
 import logging
 import time
+from typing import Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from src.models import Decoder, Encoder, Predictor
+from src.models import Decoder, Encoder, Predictor, VisionDecoder, VisionEncoder
 
 
 class JEPATrainer:
@@ -18,9 +19,9 @@ class JEPATrainer:
 
     def __init__(
         self,
-        encoder: Encoder,
+        encoder: Union[Encoder, VisionEncoder],
         predictor: Predictor,
-        decoder: Decoder,
+        decoder: Union[Decoder, VisionDecoder],
         dataloader: torch.utils.data.DataLoader,
         lr: float = 1e-3,
         ema_start: float = 0.99,
@@ -81,22 +82,31 @@ class JEPATrainer:
                 trajectory = trajectory.to(self.device)  # (B, 30, 4)
 
                 # Dynamic Slicing
-                # History inferred from Encoder input_dim
-                # Linear layer is at index 0 of Sequential
-                first_layer = self.encoder.net[0]
-                if isinstance(first_layer, nn.Linear):
-                    H = first_layer.in_features // 4
+                # History inferred from Encoder structure
+                input_layer = self.encoder.net[0]
+                is_vision = isinstance(input_layer, nn.Conv2d)
+
+                if is_vision:
+                    # Conv2d(in_channels, ...)
+                    # in_channels = History * Channels_per_frame
+                    # We need to know Channels per frame.
+                    # For Pendulum Image: 3.
+                    # We can infer H if we assume C=3.
+                    # Or we just pass H as config? Trainer doesn't have config.
+                    # Let's infer H assuming RGB (3 channels)
+                    in_channels = input_layer.in_channels
+                    H = in_channels // 3
+                elif isinstance(input_layer, nn.Linear):
+                    H = input_layer.in_features // 4
                 else:
-                    raise ValueError("Encoder structure changed, cannot infer history length")
+                    # Fallback or error
+                    # Maybe it's a Sequential inside?
+                    raise ValueError("Unknown Encoder structure")
 
                 seq_len = trajectory.shape[1]
                 max_gap = 5
 
                 # Pick valid start index t
-                # We need H frames for context starting at t
-                # We need H frames for target starting at t+gap
-                # Max index needed is t + max_gap + H
-
                 max_start = seq_len - H - max_gap
                 if max_start <= 0:
                     max_start = 1
@@ -107,14 +117,20 @@ class JEPATrainer:
                 context_frames = trajectory[:, t : t + H]
                 target_frames = trajectory[:, t + gap : t + gap + H]
 
-                context = context_frames.flatten(start_dim=1)
-                target = target_frames.flatten(start_dim=1)
+                if is_vision:
+                    # (B, H, C, W, H) -> (B, H*C, W, H)
+                    # Start dim 1 (H), End dim 2 (C) -> merged
+                    B, _, C, Hei, Wid = context_frames.shape
+                    context = context_frames.reshape(B, -1, Hei, Wid)
+                    target = target_frames.reshape(B, -1, Hei, Wid)
+                else:
+                    context = context_frames.flatten(start_dim=1)
+                    target = target_frames.flatten(start_dim=1)
 
                 # Forward Pass
                 s_curr = self.encoder(context)
 
                 # Recursive Prediction
-                # We apply Predictor 'gap' times: z_t -> z_{t+1} -> ... -> z_{t+gap}
                 for _ in range(gap):
                     s_curr = self.predictor(s_curr)
 
@@ -128,7 +144,6 @@ class JEPATrainer:
 
                 optimizer.zero_grad()
                 loss.backward()
-                # Gradient clipping removed as requested
                 optimizer.step()
 
                 # EMA Update for Target Encoder
@@ -171,15 +186,29 @@ class JEPATrainer:
                 # "Train the Decoder to map Latent -> Observation."
                 # Usually it reconstructs the input (Autoencoder style).
 
-                first_layer = self.encoder.net[0]
-                if isinstance(first_layer, nn.Linear):
-                    H = first_layer.in_features // 4
+                # Decoder always learns to reconstruct the context itself?
+                # "Train the Decoder to map Latent -> Observation."
+                # Usually it reconstructs the input (Autoencoder style).
+
+                input_layer = self.encoder.net[0]
+                is_vision = isinstance(input_layer, nn.Conv2d)
+
+                if is_vision:
+                    in_channels = input_layer.in_channels
+                    H = in_channels // 3
+                elif isinstance(input_layer, nn.Linear):
+                    H = input_layer.in_features // 4
                 else:
                     raise ValueError("Encoder structure changed")
 
                 # Just take the first H frames as context
                 context_frames = trajectory[:, 0:H]
-                context = context_frames.flatten(start_dim=1)
+
+                if is_vision:
+                    B, _, C, Hei, Wid = context_frames.shape
+                    context = context_frames.reshape(B, -1, Hei, Wid)
+                else:
+                    context = context_frames.flatten(start_dim=1)
 
                 with torch.no_grad():
                     embedding = self.encoder(context)

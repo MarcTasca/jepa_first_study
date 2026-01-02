@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from src.config import ExperimentConfig
 from src.dataset import DatasetFactory
-from src.models import Decoder, Encoder, Predictor
+from src.models import Decoder, Encoder, Predictor, VisionDecoder, VisionEncoder
 from src.trainer import JEPATrainer
 from src.utils import setup_logger
 from src.visualization import visualize_forecast, visualize_latent_reconstruction
@@ -66,31 +66,38 @@ class Runner:
 
     def initialize_models(self):
         # Determine input/output dims from dataset properties
-        # This logic mimics the original main.py heuristic
-        # Enc Input is usually history_length frames
-        # Dec Output is same
+        is_visual = self.cfg.dataset.name == "pendulum_image"
 
-        # We need to know channels per frame.
-        # For Pendulum: 4 (x1,y1,x2,y2). For others: 2 (x,y).
+        if is_visual:
+            channels = 3  # RGB
+            # For vision, input is (B, History*C, H, W)
+            input_channels = channels * self.cfg.dataset.history_length
 
-        # No need to inspect sample, we rely on config
-        if self.cfg.dataset.name == "pendulum":
-            channels = 4
+            self.logger.info(f"Initializing Vision Models with In Channels: {input_channels}")
+
+            self.encoder = VisionEncoder(input_channels=input_channels, embedding_dim=self.cfg.model.embedding_dim)
+            # Predictor is always MLP on Latents
+            self.predictor = Predictor(embedding_dim=self.cfg.model.embedding_dim, hidden_dim=self.cfg.model.hidden_dim)
+            self.decoder = VisionDecoder(embedding_dim=self.cfg.model.embedding_dim, output_channels=input_channels)
         else:
-            channels = 2
+            # Vector based datasets
+            if self.cfg.dataset.name == "pendulum":
+                channels = 4
+            else:
+                channels = 2
 
-        input_dim = channels * self.cfg.dataset.history_length
-        output_dim = channels * self.cfg.dataset.history_length
+            input_dim = channels * self.cfg.dataset.history_length
+            output_dim = channels * self.cfg.dataset.history_length
 
-        self.logger.info(f"Initializing models with Input Dim: {input_dim}, Output Dim: {output_dim}")
+            self.logger.info(f"Initializing models with Input Dim: {input_dim}, Output Dim: {output_dim}")
 
-        self.encoder = Encoder(
-            input_dim=input_dim, hidden_dim=self.cfg.model.hidden_dim, embedding_dim=self.cfg.model.embedding_dim
-        )
-        self.predictor = Predictor(embedding_dim=self.cfg.model.embedding_dim, hidden_dim=self.cfg.model.hidden_dim)
-        self.decoder = Decoder(
-            embedding_dim=self.cfg.model.embedding_dim, output_dim=output_dim, hidden_dim=self.cfg.model.hidden_dim
-        )
+            self.encoder = Encoder(
+                input_dim=input_dim, hidden_dim=self.cfg.model.hidden_dim, embedding_dim=self.cfg.model.embedding_dim
+            )
+            self.predictor = Predictor(embedding_dim=self.cfg.model.embedding_dim, hidden_dim=self.cfg.model.hidden_dim)
+            self.decoder = Decoder(
+                embedding_dim=self.cfg.model.embedding_dim, output_dim=output_dim, hidden_dim=self.cfg.model.hidden_dim
+            )
 
     def train(self):
         self.trainer = JEPATrainer(
