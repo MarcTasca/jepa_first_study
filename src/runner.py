@@ -46,12 +46,19 @@ class Runner:
     def prepare_data(self):
         self.logger.info(f"Loading dataset: {self.cfg.dataset.name}")
         self.dataset = DatasetFactory.get_dataset(self.cfg.dataset)
+        # MPS doesn't support pin_memory effectively, so we disable it to avoid warnings
+        # and potential overhead.
+        pin_memory = self.cfg.training.pin_memory
+        if self.device.type == "mps":
+            pin_memory = False
+            self.logger.info("Disabling pin_memory for MPS device")
+
         self.dataloader = DataLoader(
             self.dataset,
             batch_size=self.cfg.training.batch_size,
             shuffle=True,
             num_workers=self.cfg.training.num_workers,
-            pin_memory=self.cfg.training.pin_memory,
+            pin_memory=pin_memory,
             prefetch_factor=self.cfg.training.prefetch_factor if self.cfg.training.num_workers > 0 else None,
             persistent_workers=True if self.cfg.training.num_workers > 0 else False,
         )
