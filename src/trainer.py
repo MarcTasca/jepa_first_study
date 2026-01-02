@@ -66,7 +66,7 @@ class JEPATrainer:
         self.encoder.train()
         self.predictor.train()
 
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
         # Base EMA decay when LR is at initial value
         base_ema = self.ema_start
@@ -239,11 +239,11 @@ class JEPATrainer:
 
                 epoch_loss += loss.item()
 
-            scheduler.step()
-
             end_time = time.time()
             epoch_duration = end_time - start_time
             avg_loss = epoch_loss / len(self.dataloader)
+
+            scheduler.step(avg_loss)
 
             self.logger.info(
                 f"JEPA Epoch {epoch + 1}/{epochs}: Loss = {avg_loss:.4f} | "
@@ -257,7 +257,7 @@ class JEPATrainer:
         """
         optimizer = optim.Adam(self.decoder.parameters(), lr=self.lr)
         criterion = nn.MSELoss()
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
         self.logger.info(f"\nStarting Decoder Training for {epochs} epochs...")
         self.decoder.train()
@@ -319,4 +319,4 @@ class JEPATrainer:
                 f"Decoder Epoch {epoch + 1}/{epochs}: Loss = {avg_loss:.6f} | "
                 f"Time: {epoch_duration:.2f}s | LR: {current_lr:.2e}"
             )
-            scheduler.step()
+            scheduler.step(avg_loss)

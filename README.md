@@ -132,6 +132,3 @@ Bardes, A., Ponce, J., & LeCun, Y. (2022). "VICReg: Variance-Invariance-Covarian
 
 **[4] Neural ODEs**
 Chen, R. T. Q., et al. (2018). "Neural Ordinary Differential Equations". *NeurIPS 2018*. [arXiv:1806.07366](https://arxiv.org/abs/1806.07366)
-
-**[5] Cosine Annealing**
-Loshchilov, I., & Hutter, F. (2016). "SGDR: Stochastic Gradient Descent with Warm Restarts". *ICLR 2017*. [arXiv:1608.03983](https://arxiv.org/abs/1608.03983)
