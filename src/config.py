@@ -83,6 +83,12 @@ class ExperimentConfig:
             default=default_ds.history_length,
             help=f"Number of history frames (default: {default_ds.history_length})",
         )
+        parser.add_argument(
+            "--image_size",
+            type=int,
+            default=default_ds.image_size,
+            help=f"Image size for visual datasets (default: {default_ds.image_size})",
+        )
 
         # Training
         parser.add_argument(
@@ -116,8 +122,9 @@ class ExperimentConfig:
 
         args = parser.parse_args()
 
-        # Map args to config structure
-        ds_config = DatasetConfig(name=args.mode, size=args.size, history_length=args.history_length)
+        ds_config = DatasetConfig(
+            name=args.mode, size=args.size, history_length=args.history_length, image_size=args.image_size
+        )
 
         # Use same epochs count for both phases for simplicity, or we could add separating flags
         tr_config = TrainingConfig(

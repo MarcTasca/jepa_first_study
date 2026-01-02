@@ -258,11 +258,43 @@ class PixelPendulumDataset(DoublePendulumDataset):
         sequence_length: int = 30,
         image_size: int = 64,
         data: Optional[torch.Tensor] = None,
+        precompute: bool = True,
     ):
         # We reuse the physics simulation from the parent class
         # This populates self.data with coordinates
         super().__init__(size, dt, history_length, sequence_length, data)
         self.image_size = image_size
+        self.precompute = precompute
+
+        if self.precompute:
+            print(
+                f"[PixelPendulumDataset] Pre-computing {size} sequences of "
+                f"{image_size}x{image_size} images into RAM..."
+            )
+            # We must verify we have enough RAM
+            # Estimate: size * sequence * 3 * H * W * 4 bytes
+            # 10k * 30 * 3 * 32 * 32 * 4 = ~3.6 GB for 32x32?
+            # Wait: 10,000 * 30 * 3 * 32 * 32 * 4 / 1024^3 = 3.5 GB
+            # 100k samples -> 35 GB.
+            # We must warn or limit.
+
+            rendered_data = []
+            for i in range(len(self.data)):
+                if i % 1000 == 0:
+                    print(f"Rendering {i}/{size}...", end="\r")
+
+                coords = self.data[i]
+                frames = []
+                for t in range(len(coords)):
+                    x1, y1, x2, y2 = coords[t]
+                    frame = self.render_frame(x1.item(), y1.item(), x2.item(), y2.item())
+                    frames.append(frame)
+                rendered_data.append(torch.stack(frames))
+
+            print("Rendering complete.")
+            self.data = torch.stack(rendered_data)
+            # Now self.data is (N, Seq, 3, H, W)
+            # We no longer need the coordinate data, it is overwritten.
 
     def render_frame(self, x1, y1, x2, y2):
         """
@@ -303,6 +335,9 @@ class PixelPendulumDataset(DoublePendulumDataset):
         return tensor
 
     def __getitem__(self, index: int) -> torch.Tensor:
+        if self.precompute:
+            return self.data[index]
+
         # Get coordinate trajectory from parent: (Seq, 4)
         coords = self.data[index]  # Tensor
 
