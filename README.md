@@ -79,7 +79,11 @@ After training the JEPA phase (50 epochs) and grounding with a Decoder (50 epoch
 
 *   **JEPA Loss (Multistep VICReg):** ~12.60
 *   **Decoder Loss (Pixel MSE):** ~0.003
-*   **Forecast:** A video demonstration of longer-term autoregressive forecasting is available in `assets/forecast.mp4`.
+
+### Forecast Visualization
+<video src="assets/forecast.mp4" controls="controls" muted="muted" playsinline="playsinline" width="100%"></video>
+
+*(If the video does not play, [download it here](assets/forecast.mp4))*
 
 ---
 
