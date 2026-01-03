@@ -42,7 +42,7 @@ To strictly verify the quality of the learned representation, we train a Decoder
 | :--- | :--- | :--- |
 | **Vision Encoder** | CNN (64 $\to$ 128 $\to$ 256 ch) | High-capacity feature extraction to resolve fine details (e.g., the second arm of the pendulum). |
 | **Vision Decoder** | Transpose Conv (256 $\to$ 128 $\to$ 64 ch) | Symmetric capacity to ensure pixel-perfect reconstruction during verification. |
-| **Latent Dim** | 64 | Tighter abstraction than pixel space ($64 \ll 64 \times 64 \times 3$), forcing semantic compression. |
+| **Latent Dim** | 64 | Tighter abstraction than pixel space ($64 \ll 64 \times 64 \times 1$), forcing semantic compression. |
 | **Predictor** | Residual MLP (512 width) | Models the velocity field ($\frac{dz}{dt}$) of the latent manifold. |
 | **Input History** | 2 Frames | Minimal temporal context required to infer velocity from static positions. |
 
@@ -65,6 +65,21 @@ To strictly verify the quality of the learned representation, we train a Decoder
 *   `src/trainer.py`: Implementation of the dual-phase training loop and Multistep VICReg loss.
 *   `src/runner.py`: Experiment orchestration and logging.
 *   `src/dataset.py`: On-the-fly Runge-Kutta 4 (RK4) physics rendering and data caching.
+
+---
+
+## Current Results (Double Pendulum)
+
+The following results demonstrate the model's ability to learn and reconstruct chaotic dynamics from pixel observations (Grayscale, $64 \times 64$).
+
+### Reconstruction Quality
+After training the JEPA phase (50 epochs) and grounding with a Decoder (50 epochs), the model achieves near-perfect reconstruction of unseen states.
+
+![Reconstruction](assets/reconstruction.png)
+
+*   **JEPA Loss (Multistep VICReg):** ~12.60
+*   **Decoder Loss (Pixel MSE):** ~0.003
+*   **Forecast:** A video demonstration of longer-term autoregressive forecasting is available in `assets/forecast.mp4`.
 
 ---
 
@@ -106,6 +121,7 @@ uv run python run.py \
 
 ### Key Arguments
 *   `--mode`: Selects the dataset (`pendulum_image` for pixels, `pendulum` for raw coordinates).
+*   `--grayscale`: Use 1-channel grayscale images (Default: True). Use `--no-grayscale` for RGB.
 *   `--prediction_horizon`: Number of autoregressive steps to unroll during training (Default: 8).
 *   `--batch_size`: Larger batch sizes (e.g., 256) provide better statistics for the VICReg Covariance loss.
 *   `--decoder_epochs`: Duration of the verification phase (Phase II).
