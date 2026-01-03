@@ -100,15 +100,7 @@ class JEPATrainer:
                 is_vision = isinstance(input_layer, nn.Conv2d)
 
                 if is_vision:
-                    # Conv2d(in_channels, ...)
-                    # in_channels = History * Channels_per_frame
-                    # We need to know Channels per frame.
-                    # For Pendulum Image: 3.
-                    # We can infer H if we assume C=3.
-                    # Or we just pass H as config? Trainer doesn't have config.
-                    # Let's infer H assuming RGB (3 channels)
-                    in_channels = input_layer.in_channels
-                    H = in_channels // 3
+                    H = self.cfg.dataset.history_length
                 elif isinstance(input_layer, nn.Linear):
                     H = input_layer.in_features // 4
                 else:
@@ -158,9 +150,8 @@ class JEPATrainer:
                 # Multistep VICReg Training
                 input_layer = self.encoder.net[0]
                 if isinstance(input_layer, nn.Conv2d):
-                    H = input_layer.in_channels // 3
-                    _, _, C, Hei, Wid = trajectory.shape  # (B, T, C, H, W)? No, (B, T, 3, 64, 64)
-                    # wait, trajectory is (B, 30, 3, 64, 64)
+                    H = self.cfg.dataset.history_length
+                    _, _, C, Hei, Wid = trajectory.shape
                 else:
                     H = 2
 
@@ -282,8 +273,7 @@ class JEPATrainer:
                 is_vision = isinstance(input_layer, nn.Conv2d)
 
                 if is_vision:
-                    in_channels = input_layer.in_channels
-                    H = in_channels // 3
+                    H = self.cfg.dataset.history_length
                 elif isinstance(input_layer, nn.Linear):
                     H = input_layer.in_features // 4
                 else:

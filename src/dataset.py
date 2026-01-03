@@ -258,6 +258,7 @@ class PixelPendulumDataset(DoublePendulumDataset):
         history_length: int = 3,
         sequence_length: int = 30,
         image_size: int = 64,
+        grayscale: bool = False,
         data: Optional[torch.Tensor] = None,
         precompute: bool = True,
     ):
@@ -265,6 +266,7 @@ class PixelPendulumDataset(DoublePendulumDataset):
         # This populates self.data with coordinates
         super().__init__(size, dt, history_length, sequence_length, data)
         self.image_size = image_size
+        self.grayscale = grayscale
         self.precompute = precompute
 
         if self.precompute:
@@ -308,9 +310,6 @@ class PixelPendulumDataset(DoublePendulumDataset):
         """
         from PIL import Image, ImageDraw
 
-        img = Image.new("RGB", (self.image_size, self.image_size), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
         cx, cy = self.image_size // 2, self.image_size // 2
         # Scale: max extent is 2.0 (L1+L2). We map 2.2 to half_width to allow margins
         scale = (self.image_size / 2) / 2.2
@@ -321,20 +320,35 @@ class PixelPendulumDataset(DoublePendulumDataset):
         px1, py1 = cx + x1 * scale, cy - y1 * scale
         px2, py2 = cx + x2 * scale, cy - y2 * scale
 
-        # Draw rods
-        # Rod 1: Origin to P1 (Cyan)
-        draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
-        # Rod 2: P1 to P2 (Magenta)
-        draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
-
-        # Draw masses (circles)
-        r = 2  # radius of mass
-        draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))  # Yellow
-        draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))  # Red
+        if self.grayscale:
+            img = Image.new("L", (self.image_size, self.image_size), 0)
+            draw = ImageDraw.Draw(img)
+            # Draw everything in white
+            draw.line([(px0, py0), (px1, py1)], fill=255, width=2)
+            draw.line([(px1, py1), (px2, py2)], fill=255, width=2)
+            r = 2
+            draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=255)
+            draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=255)
+        else:
+            img = Image.new("RGB", (self.image_size, self.image_size), (0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            # Rod 1: Origin to P1 (Cyan)
+            draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
+            # Rod 2: P1 to P2 (Magenta)
+            draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
+            # Draw masses (circles)
+            r = 2
+            draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))  # Yellow
+            draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))  # Red
 
         # Convert to tensor (C, H, W) normalized to [0,1]
         img_np = np.array(img, dtype=np.float32) / 255.0
-        tensor = torch.from_numpy(img_np).permute(2, 0, 1)  # (H,W,C) -> (C,H,W)
+
+        if self.grayscale:
+            # Add channel dim: (H, W) -> (1, H, W)
+            tensor = torch.from_numpy(img_np).unsqueeze(0)
+        else:
+            tensor = torch.from_numpy(img_np).permute(2, 0, 1)  # (H,W,C) -> (C,H,W)
 
         return tensor
 
@@ -375,6 +389,7 @@ class DatasetFactory:
             "spiral_loops": config.spiral_loops,
             "lissajous_a": config.lissajous_a,
             "lissajous_b": config.lissajous_b,
+            "grayscale": config.grayscale,
         }
         config_str = json.dumps(config_dict, sort_keys=True)
         config_hash = hashlib.md5(config_str.encode("utf-8")).hexdigest()
@@ -439,6 +454,7 @@ class DatasetFactory:
                             history_length=config.history_length,
                             sequence_length=config.sequence_length,
                             image_size=config.image_size,
+                            grayscale=config.grayscale,
                             data=data,
                         )
                 except Exception as e:
@@ -471,6 +487,7 @@ class DatasetFactory:
                 history_length=config.history_length,
                 sequence_length=config.sequence_length,
                 image_size=config.image_size,
+                grayscale=config.grayscale,
             )
         else:
             raise ValueError(f"Unknown dataset name: {config.name}")

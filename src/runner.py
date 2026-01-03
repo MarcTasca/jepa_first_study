@@ -77,7 +77,10 @@ class Runner:
         is_visual = self.cfg.dataset.name == "pendulum_image"
 
         if is_visual:
-            channels = 3  # RGB
+            if self.cfg.dataset.grayscale:
+                channels = 1
+            else:
+                channels = 3  # RGB
             # For vision, input is (B, History*C, H, W)
             input_channels = channels * self.cfg.dataset.history_length
 
@@ -154,6 +157,7 @@ class Runner:
                 save_path=recon_path,
                 num_samples=5,
                 history_length=self.cfg.dataset.history_length,
+                grayscale=self.cfg.dataset.grayscale,
             )
         else:
             visualize_latent_reconstruction(
@@ -186,6 +190,7 @@ class Runner:
                 num_frames=self.cfg.num_vis_points,
                 history_length=self.cfg.dataset.history_length,
                 image_size=self.cfg.dataset.image_size,
+                grayscale=self.cfg.dataset.grayscale,
             )
 
     def run(self):

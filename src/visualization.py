@@ -324,6 +324,7 @@ def visualize_image_reconstruction(
     save_path="reconstruction.png",
     num_samples=5,
     history_length=3,
+    grayscale=False,
 ):
     """
     Visualizes original vs reconstructed images.
@@ -370,20 +371,26 @@ def visualize_image_reconstruction(
         # Img (C, H, W). Need (H, W, C) for matplotlib.
 
         # Original Last Frame
-        orig_img = context_frames[-1].permute(1, 2, 0).numpy()  # (H, W, 3)
-
-        # Reconstructed Last Frame
         rec_cpu = rec.cpu().reshape(H, C, Hei, Wid)
-        rec_img = rec_cpu[-1].permute(1, 2, 0).numpy()  # (H, W, 3)
+        if grayscale:
+            # (1, H, W) -> (H, W) for imshow
+            orig_img = context_frames[-1].squeeze(0).cpu().numpy()
+            rec_img = rec_cpu[-1].squeeze(0).numpy()
+            cmap = "gray"
+        else:
+            # (3, H, W) -> (H, W, 3)
+            orig_img = context_frames[-1].permute(1, 2, 0).cpu().numpy()
+            rec_img = rec_cpu[-1].permute(1, 2, 0).numpy()
+            cmap = None
 
         ax_orig = axes[i, 0] if num_samples > 1 else axes[0]
         ax_rec = axes[i, 1] if num_samples > 1 else axes[1]
 
-        ax_orig.imshow(orig_img)
+        ax_orig.imshow(orig_img, cmap=cmap)
         ax_orig.set_title("Original")
         ax_orig.axis("off")
 
-        ax_rec.imshow(rec_img)
+        ax_rec.imshow(rec_img, cmap=cmap)
         ax_rec.set_title("Reconstruction")
         ax_rec.axis("off")
 
@@ -402,6 +409,7 @@ def visualize_image_forecast(
     num_frames=300,
     history_length=3,
     image_size=64,
+    grayscale=False,
 ):
     """
     Autoregressive forecasting for image-based JEPA model.
@@ -443,26 +451,47 @@ def visualize_image_forecast(
     def render_pendulum_frame(x1, y1, x2, y2, img_size):
         from PIL import Image, ImageDraw
 
-        img = Image.new("RGB", (img_size, img_size), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        if grayscale:
+            img = Image.new("L", (img_size, img_size), 0)
+            draw = ImageDraw.Draw(img)
 
-        cx, cy = img_size // 2, img_size // 2
-        scale = (img_size / 2) / 2.2
+            cx, cy = img_size // 2, img_size // 2
+            scale = (img_size / 2) / 2.2
+            px0, py0 = cx, cy
+            px1, py1 = cx + x1 * scale, cy - y1 * scale
+            px2, py2 = cx + x2 * scale, cy - y2 * scale
 
-        px0, py0 = cx, cy
-        px1, py1 = cx + x1 * scale, cy - y1 * scale
-        px2, py2 = cx + x2 * scale, cy - y2 * scale
+            draw.line([(px0, py0), (px1, py1)], fill=255, width=2)
+            draw.line([(px1, py1), (px2, py2)], fill=255, width=2)
+            r = 2
+            draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=255)
+            draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=255)
 
-        draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
-        draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
+            img_np = np.array(img, dtype=np.float32) / 255.0
+            # (H, W) -> (1, H, W)
+            return torch.from_numpy(img_np).unsqueeze(0)
 
-        r = 2
-        draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))
-        draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))
+        else:
+            img = Image.new("RGB", (img_size, img_size), (0, 0, 0))
+            draw = ImageDraw.Draw(img)
 
-        img_np = np.array(img, dtype=np.float32) / 255.0
-        tensor = torch.from_numpy(img_np).permute(2, 0, 1)
-        return tensor
+            cx, cy = img_size // 2, img_size // 2
+            scale = (img_size / 2) / 2.2
+
+            px0, py0 = cx, cy
+            px1, py1 = cx + x1 * scale, cy - y1 * scale
+            px2, py2 = cx + x2 * scale, cy - y2 * scale
+
+            draw.line([(px0, py0), (px1, py1)], fill=(0, 255, 255), width=2)
+            draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 255), width=2)
+
+            r = 2
+            draw.ellipse([px1 - r, py1 - r, px1 + r, py1 + r], fill=(255, 255, 0))
+            draw.ellipse([px2 - r, py2 - r, px2 + r, py2 + r], fill=(255, 0, 0))
+
+            img_np = np.array(img, dtype=np.float32) / 255.0
+            tensor = torch.from_numpy(img_np).permute(2, 0, 1)
+            return tensor
 
     # Render all GT frames
     gt_frames_list = []
@@ -499,10 +528,20 @@ def visualize_image_forecast(
             pred_frames.append(last_frame.cpu())
 
     # Convert to numpy for visualization
-    pred_frames = torch.stack(pred_frames).permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
+    # Convert to numpy for visualization
+    if grayscale:
+        # (T, 1, H, W) -> (T, H, W)
+        pred_frames = torch.stack(pred_frames).squeeze(1).numpy()
+    else:
+        pred_frames = torch.stack(pred_frames).permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
 
     # GT frames (skip initial context)
-    gt_frames = gt_frames_tensor[history_length:].permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
+    # GT frames (skip initial context)
+    if grayscale:
+        # (T, 1, H, W) -> (T, H, W)
+        gt_frames = gt_frames_tensor[history_length:].squeeze(1).numpy()
+    else:
+        gt_frames = gt_frames_tensor[history_length:].permute(0, 2, 3, 1).numpy()  # (T, H, W, C)
 
     # Use minimum length for safety
     min_len = min(len(gt_frames), len(pred_frames))
@@ -533,11 +572,12 @@ def visualize_image_forecast(
         ax1.clear()
         ax2.clear()
 
-        ax1.imshow(gt_frames[i])
+        cmap = "gray" if grayscale else None
+        ax1.imshow(gt_frames[i], cmap=cmap)
         ax1.set_title("Ground Truth")
         ax1.axis("off")
 
-        ax2.imshow(pred_frames[i])
+        ax2.imshow(pred_frames[i], cmap=cmap)
         ax2.set_title("JEPA Forecast")
         ax2.axis("off")
 

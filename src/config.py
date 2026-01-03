@@ -12,10 +12,10 @@ class DatasetConfig:
     # Specific to some datasets
     spiral_loops: int = 3
     lissajous_a: int = 3
-    lissajous_a: int = 3
     lissajous_b: int = 5
     # Visual datasets
     image_size: int = 64
+    grayscale: bool = True
     # Caching
     cache_dir: str = "data"
     use_cache: bool = True
@@ -94,6 +94,18 @@ class ExperimentConfig:
             default=default_ds.image_size,
             help=f"Image size for visual datasets (default: {default_ds.image_size})",
         )
+        parser.add_argument(
+            "--grayscale",
+            action="store_true",
+            default=default_ds.grayscale,
+            help="Use grayscale (1-channel) images",
+        )
+        parser.add_argument(
+            "--no-grayscale",
+            dest="grayscale",
+            action="store_false",
+            help="Use RGB (3-channel) images",
+        )
 
         # Training
         parser.add_argument(
@@ -134,7 +146,11 @@ class ExperimentConfig:
         args = parser.parse_args()
 
         ds_config = DatasetConfig(
-            name=args.mode, size=args.size, history_length=args.history_length, image_size=args.image_size
+            name=args.mode,
+            size=args.size,
+            history_length=args.history_length,
+            image_size=args.image_size,
+            grayscale=args.grayscale,
         )
 
         tr_config = TrainingConfig(
