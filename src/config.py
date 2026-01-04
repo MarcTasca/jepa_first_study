@@ -24,8 +24,15 @@ class DatasetConfig:
 
 @dataclass
 class ModelConfig:
+    type: str = "jepa"  # 'jepa' or 'vjepa'
     hidden_dim: int = 512
-    embedding_dim: int = 64  # Increased capacity for residual predictor
+    embedding_dim: int = 64
+    # V-JEPA specific
+    patch_size: int = 8
+    depth: int = 6
+    num_heads: int = 4
+    mlp_ratio: float = 4.0
+
     # VICReg Hyperparameters
     sim_coeff: float = 25.0
     std_coeff: float = 25.0
@@ -40,6 +47,11 @@ class TrainingConfig:
     batch_size: int = 64
     jepa_epochs: int = 100
     decoder_epochs: int = 100
+    # V-JEPA
+    pretrain_epochs: int = 50
+    finetune_epochs: int = 50
+    mask_ratio: float = 0.6
+
     prediction_horizon: int = 8  # Multistep training horizon
     lr: float = 1e-3
     ema_start: float = 0.99
@@ -161,4 +173,30 @@ class ExperimentConfig:
             num_workers=args.workers,
         )
 
-        return cls(dataset=ds_config, training=tr_config, seed=args.seed, num_vis_points=args.vis_points)
+    def to_yaml(self, path: str):
+        from src.utils.config_io import save_config
+
+        save_config(self, path)
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "ExperimentConfig":
+        import yaml
+
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+
+        # Manually reconstruct nested dataclasses to avoid dacite dependency
+        ds_data = data.get("dataset", {})
+        tr_data = data.get("training", {})
+        md_data = data.get("model", {})
+
+        ds_config = DatasetConfig(**ds_data)
+        tr_config = TrainingConfig(**tr_data)
+        md_config = ModelConfig(**md_data)
+
+        # Remove nested keys from data to pass the rest
+        for k in ["dataset", "training", "model"]:
+            if k in data:
+                del data[k]
+
+        return cls(dataset=ds_config, training=tr_config, model=md_config, **data)

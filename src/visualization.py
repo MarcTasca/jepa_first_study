@@ -3,6 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
 
 
 def visualize_latent_reconstruction(
@@ -598,4 +599,221 @@ def visualize_image_forecast(
     if dirname:
         os.makedirs(dirname, exist_ok=True)
 
+    imageio.mimsave(save_path, frames, fps=30)
+
+
+def visualize_vjepa_reconstruction(
+    encoder,
+    decoder,
+    dataset,
+    save_path="reconstruction_vjepa.png",
+    num_samples=5,
+    frames=30,
+    grayscale=False,
+):
+    """
+    Visualizes V-JEPA reconstruction.
+    Shows Original Sequence vs Reconstructed Sequence for a sample.
+    """
+    encoder.eval()
+    decoder.eval()
+    device = next(encoder.parameters()).device
+
+    indices = np.random.choice(len(dataset), num_samples, replace=False)
+
+    # We visualize strips of T frames
+    T_vis = 8  # Show 8 frames
+
+    fig, axes = plt.subplots(num_samples, 2, figsize=(10, 2.5 * num_samples))
+    if num_samples == 1:
+        axes = np.expand_dims(axes, 0)
+
+    plt.tight_layout()
+
+    for i, idx in enumerate(indices):
+        seq = dataset[idx]  # (T, C, H, W)
+        # V-JEPA expects (B, T, C, H, W)
+        x_in = seq.unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            z = encoder(x_in)
+            rec = decoder(z)  # (B, T, C, H, W)
+
+        # cpu
+        rec = rec.cpu().squeeze(0)  # (T, C, H, W)
+
+        # We construct a filmstrip
+        # Concat frames horizontally
+
+        def make_strip(pipeline_tensor):
+            # tensor (T, C, H, W)
+            # select first T_vis
+            t_frames = pipeline_tensor[:T_vis]
+            if grayscale:
+                # (T_vis, 1, H, W) -> (T_vis, H, W)
+                frames = t_frames.squeeze(1).numpy()
+                strip = np.hstack(frames)
+            else:
+                # (T_vis, 3, H, W) -> (T_vis, H, W, 3)
+                frames = t_frames.permute(0, 2, 3, 1).numpy()
+                strip = np.hstack(frames)
+            return strip
+
+        orig_strip = make_strip(seq)
+        rec_strip = make_strip(rec)
+
+        cmap = "gray" if grayscale else None
+
+        axes[i, 0].imshow(orig_strip, cmap=cmap)
+        axes[i, 0].set_title("Original")
+        axes[i, 0].axis("off")
+
+        axes[i, 1].imshow(rec_strip, cmap=cmap)
+        axes[i, 1].set_title("Reconstruction")
+        axes[i, 1].axis("off")
+
+    print(f"Saving V-JEPA reconstruction to {save_path}")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
+
+
+def visualize_vjepa_forecast(
+    encoder,
+    predictor,
+    decoder,
+    dataset,  # Unused if we simulate physics? Or we use initial condition from it.
+    save_path="forecast_vjepa.mp4",
+    num_frames=100,
+    history_length=1,  # V-JEPA AR usually condition on z_t
+    grayscale=False,
+):
+    """
+    Forecast V-JEPA using AR predictor (z_t -> z_{t+1}).
+    """
+    encoder.eval()
+    predictor.eval()
+    decoder.eval()
+    device = next(encoder.parameters()).device
+
+    # Physics GT
+    from src.dataset import DoublePendulumDataset
+
+    gt_sim = DoublePendulumDataset(size=1, history_length=1)
+
+    state = np.random.rand(4) * 2 * np.pi
+    state[2:] *= 1.0  # velocities
+
+    # Generate GT sequence
+    total_frames = num_frames + 10
+    coords = []
+    for _ in range(total_frames):
+        theta1, theta2 = state[0], state[1]
+        x1 = gt_sim.L1 * np.sin(theta1)
+        y1 = -gt_sim.L1 * np.cos(theta1)
+        x2 = x1 + gt_sim.L2 * np.sin(theta2)
+        y2 = y1 - gt_sim.L2 * np.cos(theta2)
+        coords.append([x1, y1, x2, y2])
+        state = gt_sim.rk4_step(state, gt_sim.dt)
+
+    # Reuse Pixel Renderer logic (hack: create temp dataset)
+    from src.dataset import PixelPendulumDataset
+
+    # We instantiate a dummy just to use render_frame method?
+    # Or just copy method. Just instantiate small one.
+    renderer = PixelPendulumDataset(size=1, grayscale=grayscale, image_size=64, precompute=False)
+
+    gt_frames = []
+    for c in coords:
+        x1, y1, x2, y2 = c
+        f = renderer.render_frame(x1, y1, x2, y2)  # (C, H, W)
+        gt_frames.append(f)
+    gt_frames = torch.stack(gt_frames)  # (T, C, H, W)
+
+    # Encoder Initial Frame
+    # We take frame 0
+    x0 = gt_frames[0].unsqueeze(0).unsqueeze(0).to(device)  # (B=1, T=1, C, H, W)
+
+    pred_frames = []
+
+    with torch.no_grad():
+        # Encode x0
+        # Hack: Force encoder T=1
+        orig_frames = encoder.patch_embed.frames
+        if hasattr(encoder, "patch_embed"):
+            encoder.patch_embed.frames = 1
+
+        # Pos Embed Hack
+        full_pos = encoder.pos_embed
+        num_spatial = (64 // 8) ** 2
+        encoder.pos_embed = nn.Parameter(full_pos[:, :num_spatial, :])
+
+        z = encoder(x0)  # (1, N_s, E)
+        z_flat = z.flatten(1)  # (1, N_s*E)
+
+        # Loop
+        for _ in range(num_frames):
+            # Decode current z to pixel
+            # Decoder expects (1, N_s, E)
+            z_spatial = z_flat.view(1, num_spatial, -1)
+            rec = decoder(z_spatial)  # (1, 1, C, H, W)
+            frame = rec.squeeze(0).squeeze(0).cpu()
+            pred_frames.append(frame)
+
+            # Predict next z
+            z_flat = predictor(z_flat)  # (1, FlatDim) -> (1, FlatDim)
+
+        # Restore Encoder
+        if hasattr(encoder, "patch_embed"):
+            encoder.patch_embed.frames = orig_frames
+        encoder.pos_embed = full_pos
+
+    # Visualize
+    pred_frames = torch.stack(pred_frames)
+
+    # Compare
+    gt_vis = gt_frames[1 : num_frames + 1]
+
+    if grayscale:
+        gt_vis = gt_vis.squeeze(1).numpy()
+        pred_vis = pred_frames.squeeze(1).numpy()
+    else:
+        gt_vis = gt_vis.permute(0, 2, 3, 1).numpy()
+        pred_vis = pred_frames.permute(0, 2, 3, 1).numpy()
+
+    # Animation code (reuse)
+    frames = []
+    min_len = min(len(gt_vis), len(pred_vis))
+
+    if min_len == 0:
+        print("Warning: No frames generated for forecasting.")
+        return
+
+    import imageio
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(10, 5))
+    canvas = FigureCanvasAgg(fig)
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax2 = fig.add_subplot(1, 2, 2)
+
+    for i in range(min_len):
+        ax1.clear()
+        ax2.clear()
+        cmap = "gray" if grayscale else None
+
+        ax1.imshow(gt_vis[i], cmap=cmap)
+        ax1.set_title("Ground Truth")
+        ax1.axis("off")
+
+        ax2.imshow(np.clip(pred_vis[i], 0, 1), cmap=cmap)
+        ax2.set_title("V-JEPA Forecast")
+        ax2.axis("off")
+
+        canvas.draw()
+        image = np.asarray(canvas.buffer_rgba())[:, :, :3]
+        frames.append(image)
+
+    print(f"Saving V-JEPA forecast to {save_path}")
     imageio.mimsave(save_path, frames, fps=30)

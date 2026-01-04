@@ -1,0 +1,29 @@
+
+dataset:
+  name: pendulum_image
+  size: 5000
+  sequence_length: 30
+  image_size: 64
+  grayscale: true
+  use_cache: true
+
+model:
+  type: vjepa
+  embedding_dim: 128
+  hidden_dim: 256
+  patch_size: 8
+  depth: 4
+  num_heads: 4
+  mlp_ratio: 2.0
+
+training:
+  batch_size: 4
+  pretrain_epochs: 20
+  finetune_epochs: 20
+  mask_ratio: 0.6
+  lr: 0.001
+  device: auto
+  num_workers: 0
+
+
+num_vis_points: 100

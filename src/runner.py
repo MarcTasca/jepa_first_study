@@ -9,30 +9,36 @@ from torch.utils.data import DataLoader
 from src.config import ExperimentConfig
 from src.dataset import DatasetFactory
 from src.models import Decoder, Encoder, Predictor, VisionDecoder, VisionEncoder
+from src.models_vjepa import VJepaDecoder, VJepaPredictor, VJepaViT
 from src.trainer import JEPATrainer
+from src.trainer_vjepa import VJepaTrainer
 from src.utils import setup_logger
 from src.visualization import (
     visualize_forecast,
     visualize_image_forecast,
     visualize_image_reconstruction,
     visualize_latent_reconstruction,
+    visualize_vjepa_forecast,
+    visualize_vjepa_reconstruction,
 )
 
 
 class Runner:
-    def __init__(self, config: ExperimentConfig):
+    def __init__(self, config: ExperimentConfig, output_dir: str = None):
         self.cfg = config
 
-        # Create unique run directory
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.run_id = f"{self.cfg.dataset.name}_{timestamp}"
-        self.run_dir = os.path.join(self.cfg.results_dir, self.run_id)
+        if output_dir:
+            self.run_dir = output_dir
+            # Assume logging is already configured by setup_experiment
+        else:
+            # Create unique run directory (Legacy mode)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.run_id = f"{self.cfg.dataset.name}_{timestamp}"
+            self.run_dir = os.path.join(self.cfg.results_dir, self.run_id)
+            os.makedirs(self.run_dir, exist_ok=True)
+            # Setup logger
+            setup_logger(name="", log_file=f"{self.run_dir}/run.log")
 
-        os.makedirs(self.run_dir, exist_ok=True)
-
-        # Setup logger
-        # We configure the root logger ("") so that JEPATrainer logging also works
-        setup_logger(name="", log_file=f"{self.run_dir}/run.log")
         self.logger = logging.getLogger("Runner")
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -75,6 +81,57 @@ class Runner:
     def initialize_models(self):
         # Determine input/output dims from dataset properties
         is_visual = self.cfg.dataset.name == "pendulum_image"
+
+        # Check Model Type
+        model_type = getattr(self.cfg.model, "type", "jepa")
+
+        if model_type == "vjepa":
+            self.logger.info("Initializing V-JEPA Models (Transformer)")
+            # Assume 30 frames from dataset config
+            frames = self.cfg.dataset.sequence_length
+            if self.cfg.dataset.grayscale:
+                in_chans = 1
+            else:
+                in_chans = 3
+
+            self.encoder = VJepaViT(
+                img_size=self.cfg.dataset.image_size,
+                patch_size=self.cfg.model.patch_size,
+                frames=frames,
+                in_chans=in_chans,
+                embed_dim=self.cfg.model.embedding_dim,
+                depth=self.cfg.model.depth,
+                num_heads=self.cfg.model.num_heads,
+                mlp_ratio=self.cfg.model.mlp_ratio,
+            )
+
+            # Predictor also transformer
+            self.predictor = VJepaPredictor(
+                embed_dim=self.cfg.model.embedding_dim,
+                depth=4,  # Fixed depth for predictor for now
+                num_heads=self.cfg.model.num_heads,
+            )
+
+            # Autoregressive Fine-tuning Predictor (Simple MLP or small TF)
+            # Reuse Predictor class? VJepaPredictor is designed for masking.
+            # We need a standard AR predictor for fine-tuning.
+            # Let's use the standard JEPA Predictor (Residual MLP) for phase 2 fine-tuning!
+            # It takes vectors.
+
+            # Flattened Dim per frame: N_spatial * Embed
+            num_spatial = (self.cfg.dataset.image_size // self.cfg.model.patch_size) ** 2
+            flat_dim = num_spatial * self.cfg.model.embedding_dim
+
+            self.ar_predictor = Predictor(embedding_dim=flat_dim, hidden_dim=self.cfg.model.hidden_dim)
+
+            self.decoder = VJepaDecoder(
+                embed_dim=self.cfg.model.embedding_dim,
+                patch_size=self.cfg.model.patch_size,
+                img_size=self.cfg.dataset.image_size,
+                frames=frames,
+                in_chans=in_chans,
+            )
+            return
 
         if is_visual:
             if self.cfg.dataset.grayscale:
@@ -119,6 +176,39 @@ class Runner:
             )
 
     def train(self):
+        model_type = getattr(self.cfg.model, "type", "jepa")
+
+        if model_type == "vjepa":
+            self.trainer = VJepaTrainer(
+                encoder=self.encoder,
+                predictor=self.predictor,
+                dataloader=self.dataloader,
+                device=self.device,
+                lr=self.cfg.training.lr,
+            )
+
+            # Phase 1: Pre-training
+            self.logger.info("Starting Phase 1: Masked Pre-training")
+            self.trainer.train_pretraining(
+                epochs=self.cfg.training.pretrain_epochs, mask_ratio=self.cfg.training.mask_ratio
+            )
+
+            # Phase 2: Fine-tuning
+            self.logger.info("Starting Phase 2: Autoregressive Fine-tuning")
+            # We pass the AR Predictor we initialized
+            self.ar_predictor = self.ar_predictor.to(self.device)
+            self.trainer.train_finetuning(
+                autoregressive_predictor=self.ar_predictor, epochs=self.cfg.training.finetune_epochs
+            )
+
+            # Save models
+            models_dir = os.path.join(self.run_dir, "models")
+            os.makedirs(models_dir, exist_ok=True)
+            torch.save(self.encoder.state_dict(), os.path.join(models_dir, "encoder.pth"))
+            torch.save(self.predictor.state_dict(), os.path.join(models_dir, "predictor_masked.pth"))
+            torch.save(self.ar_predictor.state_dict(), os.path.join(models_dir, "predictor_ar.pth"))
+            return
+
         self.trainer = JEPATrainer(
             encoder=self.encoder,
             predictor=self.predictor,
@@ -146,8 +236,30 @@ class Runner:
 
     def visualize(self):
         self.logger.info("Generating Visualizations...")
-
         recon_path = os.path.join(self.run_dir, "reconstruction.png")
+        model_type = getattr(self.cfg.model, "type", "jepa")
+
+        if model_type == "vjepa":
+            visualize_vjepa_reconstruction(
+                self.encoder,
+                self.decoder,
+                self.dataset,
+                save_path=recon_path,
+                num_samples=5,
+                grayscale=self.cfg.dataset.grayscale,
+            )
+
+            forecast_path = os.path.join(self.run_dir, "forecast.mp4")
+            visualize_vjepa_forecast(
+                self.encoder,
+                self.ar_predictor,  # Use the AR predictor
+                self.decoder,
+                self.dataset,
+                save_path=forecast_path,
+                num_frames=self.cfg.num_vis_points,
+                grayscale=self.cfg.dataset.grayscale,
+            )
+            return
 
         if self.cfg.dataset.name == "pendulum_image":
             visualize_image_reconstruction(
