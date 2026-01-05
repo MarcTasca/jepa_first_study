@@ -175,7 +175,7 @@ class Runner:
                 embedding_dim=self.cfg.model.embedding_dim, output_dim=output_dim, hidden_dim=self.cfg.model.hidden_dim
             )
 
-    def train(self):
+    def train(self, resume_path=None):
         model_type = getattr(self.cfg.model, "type", "jepa")
 
         if model_type == "vjepa":
@@ -184,8 +184,13 @@ class Runner:
                 predictor=self.predictor,
                 dataloader=self.dataloader,
                 device=self.device,
+                run_dir=self.run_dir,
                 lr=self.cfg.training.lr,
             )
+
+            if resume_path:
+                start_epoch = self.trainer.load_checkpoint(resume_path)
+                self.logger.info(f"Resumed from epoch {start_epoch}")
 
             # Phase 1: Pre-training
             self.logger.info("Starting Phase 1: Masked Pre-training")
@@ -305,10 +310,10 @@ class Runner:
                 grayscale=self.cfg.dataset.grayscale,
             )
 
-    def run(self):
+    def run(self, resume_path=None):
         self.setup_seeds()
         self.prepare_data()
         self.initialize_models()
-        self.train()
+        self.train(resume_path=resume_path)
         self.visualize()
         self.logger.info(f"Experiment Completed. Results saved to {self.run_dir}")

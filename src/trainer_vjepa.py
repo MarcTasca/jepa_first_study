@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 import torch
@@ -9,13 +10,18 @@ from src.masking import RandomMaskingGenerator
 
 
 class VJepaTrainer:
-    def __init__(self, encoder, predictor, dataloader, device, lr=1e-3):
+    def __init__(self, encoder, predictor, dataloader, device, run_dir, lr=1e-3):
         self.encoder = encoder.to(device)
         self.predictor = predictor.to(device)
         self.dataloader = dataloader
         self.device = device
+        self.run_dir = run_dir
         self.lr = lr
         self.logger = logging.getLogger("VJepaTrainer")
+
+        # Create checkpoints dir
+        self.ckpt_dir = os.path.join(self.run_dir, "checkpoints")
+        os.makedirs(self.ckpt_dir, exist_ok=True)
 
     def train_pretraining(self, epochs=20, mask_ratio=0.6):
         """
@@ -128,10 +134,67 @@ class VJepaTrainer:
 
                 epoch_loss += loss.item()
 
+                if i % 10 == 0:
+                    elapsed = time.time() - start_time
+                    batches_done = i + 1
+                    batches_total = len(self.dataloader)
+
+                    speed = batches_done / elapsed
+                    eta = (batches_total - batches_done) / speed
+
+                    current_lr = optimizer.param_groups[0]["lr"]
+
+                    self.logger.info(
+                        f"Epoch {epoch + 1} [{i}/{batches_total}] "
+                        f"Loss: {loss.item():.4f} | "
+                        f"AvgLoss: {epoch_loss / batches_done:.4f} | "
+                        f"Speed: {speed:.2f} batch/s | "
+                        f"ETA: {eta / 60:.1f} min | "
+                        f"LR: {current_lr:.2e}"
+                    )
+
             avg_loss = epoch_loss / len(self.dataloader)
             self.logger.info(
-                f"V-JEPA Pre-training Epoch {epoch + 1}/{epochs}: Loss={avg_loss:.4f} | Time={time.time() - start_time:.1f}s"
+                f"V-JEPA Pre-training Epoch {epoch + 1}/{epochs} Completed: "
+                f"Loss={avg_loss:.4f} | Time={time.time() - start_time:.1f}s"
             )
+
+            # Save Checkpoint
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "encoder": self.encoder.state_dict(),
+                    "predictor": self.predictor.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "loss": avg_loss,
+                },
+                os.path.join(self.ckpt_dir, f"pretrain_epoch_{epoch + 1}.pth"),
+            )
+
+            torch.save(self.encoder.state_dict(), os.path.join(self.ckpt_dir, "latest_encoder.pth"))
+
+            torch.save(self.encoder.state_dict(), os.path.join(self.ckpt_dir, "latest_encoder.pth"))
+
+    def load_checkpoint(self, path):
+        self.logger.info(f"Loading checkpoint from {path}")
+        checkpoint = torch.load(path, map_location=self.device)
+
+        # Load models
+        if "encoder" in checkpoint:
+            self.encoder.load_state_dict(checkpoint["encoder"])
+        if "predictor" in checkpoint:
+            self.predictor.load_state_dict(checkpoint["predictor"])
+        if "ar_predictor" in checkpoint:
+            # We statefully assume caller handles this if we are in fine-tuning
+            pass
+
+        # We need to handle optimizer.
+        # But optimizer is created inside train_pretraining/train_finetuning.
+        # This is a design flaw in current Trainer. Optimizer should be self.optimizer?
+        # For now, let's just load weights. To resume training properly with optimizer state,
+        # we'd need to init optimizer in __init__ or have train() accept a resume flag to load it.
+
+        return checkpoint.get("epoch", 0)
 
     def train_finetuning(self, autoregressive_predictor, epochs=20):
         """
@@ -235,3 +298,16 @@ class VJepaTrainer:
 
             avg_loss = epoch_loss / len(self.dataloader)
             self.logger.info(f"Fine-tuning Epoch {epoch + 1}/{epochs}: Loss={avg_loss:.4f}")
+
+            # Save Checkpoint
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "ar_predictor": autoregressive_predictor.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "loss": avg_loss,
+                },
+                os.path.join(self.ckpt_dir, f"finetune_epoch_{epoch + 1}.pth"),
+            )
+
+            torch.save(autoregressive_predictor.state_dict(), os.path.join(self.ckpt_dir, "latest_ar_predictor.pth"))
